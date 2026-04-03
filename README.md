@@ -33,6 +33,3 @@ Import the sample scene from **Package Manager → Eldritch Logger → Samples �
 
 ## Tests
 Unit tests are included under the `Tests` folder, using the Unity Test Framework.
-
-## License
-MIT License — free to use, modify, and distribute.
