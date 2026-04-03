@@ -1,0 +1,16 @@
+{
+    "name": "EldritchLogger.Test",
+    "rootNamespace": "",
+    "references": [
+        "GUID:50401b79d441f974995a2b4f4eed2822"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
