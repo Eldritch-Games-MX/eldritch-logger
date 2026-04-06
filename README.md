@@ -9,6 +9,7 @@ It provides configurable log levels, categories, and color-coded output, all man
 - Color-coded output for improved readability in the Console
 - ScriptableObject configuration for flexible setup
 - Custom inspector for easy category management
+- Fluent builder API for expressive logging
 - Sample scene for quick integration
 
 ## Installation
