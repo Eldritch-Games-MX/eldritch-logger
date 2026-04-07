@@ -1,9 +1,9 @@
 {
   "name": "com.eldritchgames.eldritchlogger",
   "displayName": "Eldritch Logger",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "unity": "6000.0",
-  "description": "A flexible logging framework for Unity that adds structured log levels, categories, and color-coded output. Configure behavior with ScriptableObjects and extend easily for any project.",
+  "description": "A configurable logging framework for Unity featuring structured log levels, category-based filtering, and color-coded output. Includes ScriptableObject-driven settings with quick presets, per-category toggles, and advanced options like custom timestamp formats and message prefixes. The custom editor provides live previews, color indicators, and one-click configuration for development, QA, and production environments.",
   "author": {
     "name": "Carlos Alberto Garcia de Alba Chavez",
     "email": "carlosga@eldritchgames.com.mx"
@@ -11,7 +11,7 @@
   "samples": [
     {
       "displayName": "Logger Sample Scene",
-      "description": "Demonstrates how to initialize and use EldritchLogger.",
+      "description": "Demonstrates how to initialize and use EldritchLogger with presets, categories, and advanced formatting.",
       "path": "Samples~/BasicUsage"
     }
   ]

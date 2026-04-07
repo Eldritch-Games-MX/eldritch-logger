@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace EldritchGames.EldritchLogger.Setttings
+namespace EldritchGames.EldritchLogger.Settings
 {
     public class LogInitializer : MonoBehaviour
     {

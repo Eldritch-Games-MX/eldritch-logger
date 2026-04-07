@@ -1,4 +1,4 @@
-using EldritchGames.EldritchLogger.Setttings;
+using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
