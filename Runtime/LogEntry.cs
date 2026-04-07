@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace EldritchGames.EldritchLogger 
+namespace EldritchGames.EldritchLogger
 {
     public class LogEntry
     {
@@ -15,17 +15,34 @@ namespace EldritchGames.EldritchLogger
 
         public override string ToString()
         {
-            string categoryColor = LogColors.GetColor(Category);
+            var settings = EldritchLogger.CurrentSettings;
+            string format = settings != null ? settings.timestampFormat : "HH:mm:ss";
+            string prefix = settings != null ? settings.messagePrefix : "";
+
+            string categoryColor = LogColors.GetColorString(Category);
             string categoryText = $"<color={categoryColor}>{Category}</color>";
-            return $"[{Timestamp:HH:mm:ss}] [{Level}] {categoryText} {Message} {FormatMetadata()}";
+
+            return $"[{Timestamp.ToString(format)}] [{Level}] {categoryText} {prefix}{Message} {FormatMetadata()}";
         }
 
         private string FormatMetadata()
         {
-            return Metadata != null
-                ? string.Join(", ", Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
-                : "";
-        }
+            if (Metadata == null || Metadata.Count == 0)
+                return "";
 
+            return string.Join(" ", Metadata.Select(kv =>
+            {
+                return kv.Key switch
+                {
+                    "ComponentContext" => $"[Component={kv.Value}]",
+                    "CSharpEvent" => $"[C#Event={kv.Value}]",
+                    "UnityEvent" => $"[UnityEvent={kv.Value}]",
+                    "GameObject" => $"[GameObject={kv.Value}]",
+                    "ExceptionType" => $"[Exception={kv.Value}]",
+                    "ExceptionMessage" => $"[Message={kv.Value}]",
+                    _ => $"{kv.Key}={kv.Value}"
+                };
+            }));
+        }
     }
 }

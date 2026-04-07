@@ -1,5 +1,6 @@
-using EldritchGames.EldritchLogger.Setttings;
+using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -34,7 +35,6 @@ namespace EldritchGames.EldritchLogger.Tests
         {
             settings.enabledCategories.Remove(LogCategory.Gameplay);
 
-            // No log expected
             EldritchLogger.Log(LogLevel.Info, LogCategory.Gameplay, "Should not log");
 
             Assert.IsFalse(settings.IsCategoryEnabled(LogCategory.Gameplay));
@@ -83,7 +83,6 @@ namespace EldritchGames.EldritchLogger.Tests
         {
             settings.enabledCategories.Remove(LogCategory.Gameplay);
 
-            // No log expected
             EldritchLogger.AtWarning()
                 .Category(LogCategory.Gameplay)
                 .Log("Should not log");
@@ -110,6 +109,87 @@ namespace EldritchGames.EldritchLogger.Tests
             EldritchLogger.AtCritical()
                 .Category(LogCategory.Gameplay)
                 .Log("Critical failure");
+        }
+
+        [Test]
+        public void FluentBuilder_LogsComponentContext()
+        {
+            LogAssert.Expect(LogType.Warning,
+                new System.Text.RegularExpressions.Regex(@"\[Component=Transform@TempObject\]"));
+
+            var go = new GameObject("TempObject");
+            EldritchLogger.AtWarning()
+                .Category(LogCategory.Gameplay)
+                .WithComponent(go.transform)
+                .Log("Component context test");
+
+            UnityEngine.Object.DestroyImmediate(go);
+        }
+
+        [Test]
+        public void FluentBuilder_LogsExceptionCause()
+        {
+            LogAssert.Expect(LogType.Error,
+                new System.Text.RegularExpressions.Regex(@"\[Exception=InvalidOperationException\].*\[Message=Something went wrong\]"));
+
+            try
+            {
+                throw new InvalidOperationException("Something went wrong");
+            }
+            catch (Exception ex)
+            {
+                EldritchLogger.AtError()
+                    .Category(LogCategory.Gameplay)
+                    .WithException(ex)
+                    .Log("Exception cause test");
+            }
+        }
+
+        [Test]
+        public void FluentBuilder_LogsCSharpEvent()
+        {
+            Action testEvent = () => { };
+            LogAssert.Expect(LogType.Log,
+                new System.Text.RegularExpressions.Regex(@"\[C#Event=.*\]"));
+
+            EldritchLogger.AtInfo()
+                .Category(LogCategory.Gameplay)
+                .WithEvent(testEvent)
+                .Log("C# event test");
+        }
+
+        [Test]
+        public void FluentBuilder_LogsUnityEvent()
+        {
+            var unityEvent = new UnityEngine.Events.UnityEvent();
+            LogAssert.Expect(LogType.Log,
+                new System.Text.RegularExpressions.Regex(@"\[UnityEvent=UnityEvent\]"));
+
+            EldritchLogger.AtInfo()
+                .Category(LogCategory.Gameplay)
+                .WithEvent(unityEvent)
+                .Log("UnityEvent test");
+        }
+
+        [Test]
+        public void FluentBuilder_LogsCombinedContext()
+        {
+            LogAssert.Expect(LogType.Error,
+                new System.Text.RegularExpressions.Regex(
+                    @"\[Component=Transform@TempObject\].*\[Exception=Exception\].*\[Message=Critical failure\].*\[C#Event=.*\].*\[GameObject=TempObject\]"
+                ));
+
+            var go = new GameObject("TempObject");
+            Action testEvent = () => { };
+
+            EldritchLogger.AtError()
+                .Category(LogCategory.Gameplay)
+                .WithComponent(go.transform)
+                .WithEvent(testEvent)
+                .WithException(new Exception("Critical failure"))
+                .Log("Combined context test");
+
+            UnityEngine.Object.DestroyImmediate(go);
         }
     }
 }

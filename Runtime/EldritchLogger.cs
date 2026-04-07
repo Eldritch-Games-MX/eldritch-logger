@@ -1,4 +1,4 @@
-using EldritchGames.EldritchLogger.Setttings;
+using EldritchGames.EldritchLogger.Settings;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -8,13 +8,14 @@ namespace EldritchGames.EldritchLogger
     public static class EldritchLogger
     {
         private static LogSettings logSettings;
+        public static LogSettings CurrentSettings => logSettings;
 
         public static void Initialize(LogSettings settings)
         {
             logSettings = settings;
         }
 
-        public static void Log(LogLevel level, LogCategory category, string message, Dictionary<string, object>? metadata = null)
+        public static void Log(LogLevel level, LogCategory category, string message, Dictionary<string, object> metadata = null)
         {
             if (!IsInitialized()) return;
             if (!ShouldLog(level, category)) return;
@@ -38,7 +39,7 @@ namespace EldritchGames.EldritchLogger
             return !(level < logSettings.logLevel || !logSettings.IsCategoryEnabled(category));
         }
 
-        private static LogEntry BuildLogEntry(LogLevel level, LogCategory category, string message, Dictionary<string, object>? metadata)
+        private static LogEntry BuildLogEntry(LogLevel level, LogCategory category, string message, Dictionary<string, object> metadata)
         {
             return new LogEntry
             {
@@ -70,10 +71,10 @@ namespace EldritchGames.EldritchLogger
             }
         }
 
-        public static LogBuilder AtDebug() => new (LogLevel.Debug);
-        public static LogBuilder AtInfo() => new (LogLevel.Info);
+        public static LogBuilder AtDebug() => new(LogLevel.Debug);
+        public static LogBuilder AtInfo() => new(LogLevel.Info);
         public static LogBuilder AtWarning() => new(LogLevel.Warning);
-        public static LogBuilder AtError() => new (LogLevel.Error);
-        public static LogBuilder AtCritical() => new (LogLevel.Critical);
+        public static LogBuilder AtError() => new(LogLevel.Error);
+        public static LogBuilder AtCritical() => new(LogLevel.Critical);
     }
 }
