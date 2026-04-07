@@ -22,6 +22,19 @@ namespace EldritchGames.EldritchLogger.Settings
         public string timestampFormat = "HH:mm:ss";   // default format
         public string messagePrefix = "";             // optional prefix
 
+        public StackTraceMode infoTrace = StackTraceMode.None;
+        public StackTraceMode warningTrace = StackTraceMode.ScriptOnly;
+        public StackTraceMode errorTrace = StackTraceMode.Full;
+
+        public bool useContextObjects = true;
+        public bool filterLoggerFrames = true;
+
         public bool IsCategoryEnabled(LogCategory category) => enabledCategories.Contains(category);
+    }
+    public enum StackTraceMode
+    {
+        None,
+        ScriptOnly,
+        Full
     }
 }

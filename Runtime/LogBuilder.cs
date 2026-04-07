@@ -60,12 +60,6 @@ public sealed class LogBuilder
     {
         var dict = metadata == null ? new Dictionary<string, object>() : new Dictionary<string, object>(metadata);
 
-        if (exception != null)
-        {
-            dict["ExceptionType"] = exception.GetType().Name;
-            dict["ExceptionMessage"] = exception.Message;
-        }
-
         if (evt is Delegate del)
             dict["CSharpEvent"] = del.Method.Name;
         else if (evt is UnityEngine.Events.UnityEventBase unityEvt)
@@ -74,6 +68,7 @@ public sealed class LogBuilder
         if (gameObject != null && !dict.ContainsKey("GameObject"))
             dict["GameObject"] = gameObject.name;
 
-        EldritchLogger.Log(level, category, message, dict);
+        EldritchLogger.Log(level, category, message, dict, exception);
     }
+
 }
