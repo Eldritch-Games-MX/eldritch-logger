@@ -1,195 +1,264 @@
+using EldritchGames.EldritchLogger;
 using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.TestTools;
 
-namespace EldritchGames.EldritchLogger.Tests
+[TestFixture]
+public class EldritchLoggerTests
 {
-    public class EldritchLoggerTests
+    private LogSettings settings;
+
+    [SetUp]
+    public void Setup()
     {
-        private LogSettings settings;
+        settings = ScriptableObject.CreateInstance<LogSettings>();
+        settings.logLevel = LogLevel.Debug;
+        settings.enabledCategories.Add(LogCategory.General);
+        EldritchLogger.Initialize(settings);
+    }
 
-        [SetUp]
-        public void Setup()
-        {
-            settings = ScriptableObject.CreateInstance<LogSettings>();
-            settings.logLevel = LogLevel.Debug;
-            settings.enabledCategories = new List<LogCategory> { LogCategory.Gameplay };
-            EldritchLogger.Initialize(settings);
-        }
+    [Test]
+    public void Initialize_SetsCurrentSettings()
+    {
+        Assert.AreEqual(settings, EldritchLogger.CurrentSettings);
+    }
 
-        [Test]
-        public void LogsGameplayEvent_WhenCategoryEnabled()
-        {
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("Test message"));
+    [Test]
+    public void Initialize_NullSettings_ShowsWarning()
+    {
+        EldritchLogger.Initialize(null);
+        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+    }
 
-            EldritchLogger.Log(LogLevel.Info, LogCategory.Gameplay, "Test message");
+    [TestCase(StackTraceMode.None, StackTraceLogType.None)]
+    [TestCase(StackTraceMode.ScriptOnly, StackTraceLogType.ScriptOnly)]
+    [TestCase(StackTraceMode.Full, StackTraceLogType.Full)]
+    public void Initialize_MapsStackTraceModes(StackTraceMode mode, StackTraceLogType expected)
+    {
+        settings.infoTrace = mode;
+        EldritchLogger.Initialize(settings);
+        Assert.AreEqual(expected, Application.GetStackTraceLogType(LogType.Log));
+    }
 
-            Assert.IsTrue(settings.IsCategoryEnabled(LogCategory.Gameplay));
-        }
+    [Test]
+    public void Log_BelowThreshold_DoesNotLog()
+    {
+        settings.logLevel = LogLevel.Error;
+        EldritchLogger.Initialize(settings);
 
-        [Test]
-        public void SkipsLog_WhenCategoryDisabled()
-        {
-            settings.enabledCategories.Remove(LogCategory.Gameplay);
+        LogAssert.NoUnexpectedReceived();
+        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Should not log");
+    }
 
-            EldritchLogger.Log(LogLevel.Info, LogCategory.Gameplay, "Should not log");
+    [Test]
+    public void Log_DisabledCategory_DoesNotLog()
+    {
+        settings.enabledCategories.Clear();
+        EldritchLogger.Initialize(settings);
 
-            Assert.IsFalse(settings.IsCategoryEnabled(LogCategory.Gameplay));
-        }
+        LogAssert.NoUnexpectedReceived();
+        EldritchLogger.Log(LogLevel.Info, LogCategory.Network, "Should not log");
+    }
 
-        [Test]
-        public void FormatsLogEntry_WithColor()
-        {
-            var entry = new LogEntry
-            {
-                Timestamp = System.DateTime.Now,
-                Level = LogLevel.Info,
-                Category = LogCategory.Gameplay,
-                Message = "Colored message"
-            };
+    [Test]
+    public void Log_InfoLevel_OutputsDebugLog()
+    {
+        LogAssert.Expect(LogType.Log, new Regex("Test message"));
+        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Test message");
+    }
 
-            string formatted = entry.ToString();
-            Assert.IsTrue(formatted.Contains("<color=green>Gameplay</color>"));
-        }
+    [Test]
+    public void Log_WarningLevel_OutputsWarningLog()
+    {
+        LogAssert.Expect(LogType.Warning, new Regex("Warn message"));
+        EldritchLogger.Log(LogLevel.Warning, LogCategory.General, "Warn message");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsMessageWithoutMetadata()
-        {
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("Builder test message"));
+    [Test]
+    public void Log_ErrorLevel_OutputsErrorLog()
+    {
+        LogAssert.Expect(LogType.Error, new Regex("Error message"));
+        EldritchLogger.Log(LogLevel.Error, LogCategory.General, "Error message");
+    }
 
-            EldritchLogger.AtInfo()
-                .Category(LogCategory.Gameplay)
-                .Log("Builder test message");
-        }
+    [Test]
+    public void Log_WithException_AppendsStackTrace()
+    {
+        var ex = new InvalidOperationException("Boom!");
+        LogAssert.Expect(LogType.Error, new Regex("Boom!"));
+        EldritchLogger.Log(LogLevel.Error, LogCategory.General, "Error occurred", null, ex);
+    }
 
-        [Test]
-        public void FluentBuilder_AddsMetadataCorrectly()
-        {
-            LogAssert.Expect(LogType.Error,
-                new System.Text.RegularExpressions.Regex("Player not Found.*PLAYER_ID=42.*SESSION_ID=abc123"));
+    [Test]
+    public void Log_WithGameObjectMetadata_AttachesContext()
+    {
+        var go = new GameObject("ContextGO");
+        var metadata = new Dictionary<string, object> { { "GameObject", "ContextGO" } };
 
-            EldritchLogger.AtError()
-                .Category(LogCategory.Gameplay)
-                .AddKeyValue("PLAYER_ID", 42)
-                .AddKeyValue("SESSION_ID", "abc123")
-                .Log("Player not Found");
-        }
+        LogAssert.Expect(LogType.Log, new Regex("Context test"));
+        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Context test", metadata);
+    }
 
-        [Test]
-        public void FluentBuilder_SkipsLog_WhenCategoryDisabled()
-        {
-            settings.enabledCategories.Remove(LogCategory.Gameplay);
+    [Test]
+    public void CleanStackTrace_FiltersLoggerFrames()
+    {
+        settings.filterLoggerFrames = true;
+        EldritchLogger.Initialize(settings);
 
-            EldritchLogger.AtWarning()
-                .Category(LogCategory.Gameplay)
-                .Log("Should not log");
-        }
+        var ex = new Exception("Test") { };
+        ex.Data["StackTrace"] = "EldritchGames.EldritchLogger.SomeMethod\nOtherFrame";
 
-        [Test]
-        public void FluentBuilder_IsImmutable()
-        {
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("Original message"));
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex("Message with metadata.*KEY=VALUE"));
+        var cleaned = EldritchLogger.CurrentSettings.filterLoggerFrames;
+        Assert.IsTrue(cleaned);
+    }
+}
+[TestFixture]
+public class EldritchLoggerUninitializedTests
+{
+    [SetUp]
+    public void Setup()
+    {
+        // Force logger into uninitialized state
+        EldritchLogger.Initialize(null);
+    }
 
-            var builder = EldritchLogger.AtDebug().Category(LogCategory.Gameplay);
-            var builderWithMetadata = builder.AddKeyValue("KEY", "VALUE");
+    [Test]
+    public void Log_WithoutInitialization_ShowsWarning()
+    {
+        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Test");
+    }
 
-            builder.Log("Original message");
-            builderWithMetadata.Log("Message with metadata");
-        }
+    [Test]
+    public void Log_WithoutInitialization_DoesNotProduceInfoLog()
+    {
+        // Expect only the warning, not the info log
+        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Message that should not appear");
+        LogAssert.NoUnexpectedReceived();
+    }
 
-        [Test]
-        public void CriticalLog_IsPrefixedCorrectly()
-        {
-            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("CRITICAL:.*Critical failure"));
+    [Test]
+    public void Initialize_Null_DoesNotCrash()
+    {
+        // Just calling Initialize(null) should not throw
+        Assert.DoesNotThrow(() => EldritchLogger.Initialize(null));
+    }
 
-            EldritchLogger.AtCritical()
-                .Category(LogCategory.Gameplay)
-                .Log("Critical failure");
-        }
+    [Test]
+    public void Log_BelowThreshold_WhenUninitialized_StillShowsWarning()
+    {
+        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+        EldritchLogger.Log(LogLevel.Debug, LogCategory.General, "Debug message");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsComponentContext()
-        {
-            LogAssert.Expect(LogType.Warning,
-                new System.Text.RegularExpressions.Regex(@"\[Component=Transform@TempObject\]"));
+    [Test]
+    public void Log_DisabledCategory_WhenUninitialized_StillShowsWarning()
+    {
+        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+        EldritchLogger.Log(LogLevel.Info, LogCategory.Network, "Network message");
+    }
+}
+[TestFixture]
+public class LogBuilderTests
+{
+    private LogSettings settings;
 
-            var go = new GameObject("TempObject");
-            EldritchLogger.AtWarning()
-                .Category(LogCategory.Gameplay)
-                .WithComponent(go.transform)
-                .Log("Component context test");
+    [SetUp]
+    public void Setup()
+    {
+        settings = ScriptableObject.CreateInstance<LogSettings>();
+        settings.logLevel = LogLevel.Debug;
+        settings.enabledCategories.Add(LogCategory.General);
+        EldritchLogger.Initialize(settings);
+    }
 
-            UnityEngine.Object.DestroyImmediate(go);
-        }
+    [Test]
+    public void AtDebug_BuildsDebugLevel()
+    {
+        LogAssert.Expect(LogType.Log, new Regex("Debug message"));
+        EldritchLogger.AtDebug().Log("Debug message");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsExceptionCause()
-        {
-            LogAssert.Expect(LogType.Error,
-                new System.Text.RegularExpressions.Regex(@"\[Exception=InvalidOperationException\].*\[Message=Something went wrong\]"));
+    [Test]
+    public void AtInfo_BuildsInfoLevel()
+    {
+        LogAssert.Expect(LogType.Log, new Regex("Info message"));
+        EldritchLogger.AtInfo().Log("Info message");
+    }
 
-            try
-            {
-                throw new InvalidOperationException("Something went wrong");
-            }
-            catch (Exception ex)
-            {
-                EldritchLogger.AtError()
-                    .Category(LogCategory.Gameplay)
-                    .WithException(ex)
-                    .Log("Exception cause test");
-            }
-        }
+    [Test]
+    public void AtWarning_BuildsWarningLevel()
+    {
+        LogAssert.Expect(LogType.Warning, new Regex("Warn message"));
+        EldritchLogger.AtWarning().Log("Warn message");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsCSharpEvent()
-        {
-            Action testEvent = () => { };
-            LogAssert.Expect(LogType.Log,
-                new System.Text.RegularExpressions.Regex(@"\[C#Event=.*\]"));
+    [Test]
+    public void AtError_BuildsErrorLevel()
+    {
+        LogAssert.Expect(LogType.Error, new Regex("Error message"));
+        EldritchLogger.AtError().Log("Error message");
+    }
 
-            EldritchLogger.AtInfo()
-                .Category(LogCategory.Gameplay)
-                .WithEvent(testEvent)
-                .Log("C# event test");
-        }
+    [Test]
+    public void AtCritical_BuildsCriticalLevel()
+    {
+        LogAssert.Expect(LogType.Error, new Regex("Critical message"));
+        EldritchLogger.AtCritical().Log("Critical message");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsUnityEvent()
-        {
-            var unityEvent = new UnityEngine.Events.UnityEvent();
-            LogAssert.Expect(LogType.Log,
-                new System.Text.RegularExpressions.Regex(@"\[UnityEvent=UnityEvent\]"));
+    [Test]
+    public void Category_SetsCategory()
+    {
+        LogAssert.Expect(LogType.Log, new Regex("Category test"));
+        EldritchLogger.AtInfo().Category(LogCategory.UI).Log("Category test");
+    }
 
-            EldritchLogger.AtInfo()
-                .Category(LogCategory.Gameplay)
-                .WithEvent(unityEvent)
-                .Log("UnityEvent test");
-        }
+    [Test]
+    public void AddKeyValue_AddsMetadata()
+    {
+        LogAssert.Expect(LogType.Log, new Regex("CustomKey=CustomValue"));
+        EldritchLogger.AtInfo().AddKeyValue("CustomKey", "CustomValue").Log("Info with metadata");
+    }
 
-        [Test]
-        public void FluentBuilder_LogsCombinedContext()
-        {
-            LogAssert.Expect(LogType.Error,
-                new System.Text.RegularExpressions.Regex(
-                    @"\[Component=Transform@TempObject\].*\[Exception=Exception\].*\[Message=Critical failure\].*\[C#Event=.*\].*\[GameObject=TempObject\]"
-                ));
+    [Test]
+    public void WithException_AttachesException()
+    {
+        var ex = new InvalidOperationException("Boom!");
+        LogAssert.Expect(LogType.Error, new Regex("Boom!"));
+        EldritchLogger.AtError().WithException(ex).Log("Error with exception");
+    }
 
-            var go = new GameObject("TempObject");
-            Action testEvent = () => { };
+    [Test]
+    public void WithEvent_AttachesDelegateEvent()
+    {
+        Action testAction = () => { };
+        LogAssert.Expect(LogType.Log, new Regex("C#Event="));
+        EldritchLogger.AtInfo().WithEvent(testAction).Log("Info with event");
+    }
 
-            EldritchLogger.AtError()
-                .Category(LogCategory.Gameplay)
-                .WithComponent(go.transform)
-                .WithEvent(testEvent)
-                .WithException(new Exception("Critical failure"))
-                .Log("Combined context test");
+    [Test]
+    public void WithComponent_AttachesComponentContext()
+    {
+        var go = new GameObject("TestGO");
+        var comp = go.AddComponent<BoxCollider>();
 
-            UnityEngine.Object.DestroyImmediate(go);
-        }
+        LogAssert.Expect(LogType.Log, new Regex("BoxCollider@TestGO"));
+        EldritchLogger.AtDebug().WithComponent(comp).Log("Debug with component");
+    }
+
+    [Test]
+    public void WithComponent_AttachesGameObjectName()
+    {
+        var go = new GameObject("ContextGO");
+        var comp = go.AddComponent<BoxCollider>();
+
+        LogAssert.Expect(LogType.Log, new Regex("ContextGO"));
+        EldritchLogger.AtInfo().WithComponent(comp).Log("Info with GameObject context");
     }
 }

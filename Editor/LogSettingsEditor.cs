@@ -129,15 +129,76 @@ public class LogSettingsEditor : Editor
 
             EditorGUILayout.LabelField("Message Prefix", EditorStyles.boldLabel);
             settings.messagePrefix = EditorGUILayout.TextField(settings.messagePrefix);
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Stack Trace Settings", EditorStyles.boldLabel);
+
+            settings.infoTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Info/Debug Trace", settings.infoTrace);
+            settings.warningTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Warning Trace", settings.warningTrace);
+            settings.errorTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Error/Critical Trace", settings.errorTrace);
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Context Settings", EditorStyles.boldLabel);
+
+            settings.useContextObjects = EditorGUILayout.Toggle("Use Context Objects", settings.useContextObjects);
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Exception Filtering", EditorStyles.boldLabel);
+
+            settings.filterLoggerFrames = EditorGUILayout.Toggle("Filter Logger Internals", settings.filterLoggerFrames);
         }
         EditorGUILayout.Space();
     }
-
     private void DrawPreview(LogSettings settings)
     {
         EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
-        string preview = $"[{System.DateTime.Now.ToString(settings.timestampFormat)}] " +
-                         $"[{settings.logLevel}] Gameplay {settings.messagePrefix} Sample log message";
-        EditorGUILayout.HelpBox(preview, MessageType.None);
+
+        // Build a sample LogEntry
+        var sampleEntry = new LogEntry
+        {
+            Timestamp = System.DateTime.Now,
+            Level = settings.logLevel,
+            Category = LogCategory.Gameplay,
+            Message = $"{settings.messagePrefix} Sample log message",
+            Metadata = new Dictionary<string, object>
+        {
+            { "GameObject", "PlayerPawn" }
+        },
+            Exception = new System.Exception("Preview exception message")
+        };
+
+        string preview = sampleEntry.ToString();
+
+        // Style with rich text enabled
+        GUIStyle richTextStyle = new GUIStyle(EditorStyles.label)
+        {
+            richText = true,
+            wordWrap = true
+        };
+
+        // Severity coloring
+        string severityColor = settings.logLevel switch
+        {
+            LogLevel.Warning => "yellow",
+            LogLevel.Error => "red",
+            LogLevel.Critical => "red",
+            LogLevel.Debug => "white",
+            LogLevel.Info => "white",
+            _ => "white"
+        };
+
+        // Category coloring (using your LogColors)
+        string categoryColor = LogColors.GetColorString(LogCategory.Gameplay);
+
+        // Replace category text with colored version
+        string coloredPreview = preview.Replace(
+            "Gameplay",
+            $"<color={categoryColor}>Gameplay</color>"
+        );
+
+        // Wrap entire preview in severity color
+        coloredPreview = $"<color={severityColor}>{coloredPreview}</color>";
+
+        EditorGUILayout.LabelField(coloredPreview, richTextStyle, GUILayout.Height(100));
     }
 }

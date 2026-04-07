@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger;
 using EldritchGames.EldritchLogger.Visuals;
 using System;
 using System.Collections.Generic;
@@ -13,6 +14,8 @@ namespace EldritchGames.EldritchLogger
         public string Message { get; set; }
         public Dictionary<string, object> Metadata { get; set; }
 
+        public Exception Exception { get; set; }
+
         public override string ToString()
         {
             var settings = EldritchLogger.CurrentSettings;
@@ -22,7 +25,19 @@ namespace EldritchGames.EldritchLogger
             string categoryColor = LogColors.GetColorString(Category);
             string categoryText = $"<color={categoryColor}>{Category}</color>";
 
-            return $"[{Timestamp.ToString(format)}] [{Level}] {categoryText} {prefix}{Message} {FormatMetadata()}";
+            string baseMessage = $"[{Timestamp.ToString(format)}] [{Level}] {categoryText} {prefix}{Message} {FormatMetadata()}";
+
+            if (Exception != null)
+            {
+                string trace = Exception.StackTrace ?? "";
+                if (settings != null && settings.filterLoggerFrames)
+                {
+                    trace = CleanStackTrace(trace);
+                }
+                baseMessage += $"\n{Exception.GetType().Name}: {Exception.Message}\n{trace}";
+            }
+
+            return baseMessage;
         }
 
         private string FormatMetadata()
@@ -38,11 +53,16 @@ namespace EldritchGames.EldritchLogger
                     "CSharpEvent" => $"[C#Event={kv.Value}]",
                     "UnityEvent" => $"[UnityEvent={kv.Value}]",
                     "GameObject" => $"[GameObject={kv.Value}]",
-                    "ExceptionType" => $"[Exception={kv.Value}]",
-                    "ExceptionMessage" => $"[Message={kv.Value}]",
                     _ => $"{kv.Key}={kv.Value}"
                 };
             }));
+        }
+
+        private string CleanStackTrace(string raw)
+        {
+            var lines = raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var filtered = lines.Where(line => !line.Contains("EldritchGames.EldritchLogger")).Select(line => line.Trim());
+            return string.Join("\n", filtered);
         }
     }
 }
