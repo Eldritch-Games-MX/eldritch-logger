@@ -1,29 +1,18 @@
 using UnityEngine;
+using EldritchGames.EldritchLogger.Settings;
 
 namespace EldritchGames.EldritchLogger.Visuals
 {
     public static class LogColors
     {
-        public static Color GetColor(LogCategory category)
+        public static Color GetColor(LogCategory category, LogSettings settings)
         {
-            return category switch
-            {
-                LogCategory.General => Color.white,
-                LogCategory.Gameplay => Color.green,
-                LogCategory.UI => Color.blue,
-                LogCategory.Audio => Color.yellow,
-                LogCategory.Network => Color.magenta,
-                LogCategory.AI => Color.cyan,
-                LogCategory.Physics => new Color(1f, 0.5f, 0f),   // orange
-                LogCategory.Animation => new Color(0.5f, 0f, 0.5f), // purple
-                LogCategory.Input => new Color(0f, 0.5f, 0f),   // dark green
-                _ => Color.white
-            };
+            return settings != null ? settings.GetCategoryColor(category) : Color.white;
         }
 
-        public static string GetColorString(LogCategory category)
+        public static string GetColorString(LogCategory category, LogSettings settings)
         {
-            Color color = GetColor(category);
+            Color color = GetColor(category, settings);
             return $"#{ColorUtility.ToHtmlStringRGB(color)}";
         }
     }
