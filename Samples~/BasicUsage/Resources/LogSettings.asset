@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 23230d4de7466784ba61a21c19873751, type: 3}
+  m_Name: LogSettings
+  m_EditorClassIdentifier: EldritchLogger::LogSettings
+  logLevel: 0
+  enabledCategories: 000000000400000002000000030000000600000005000000070000000800000001000000
+  timestampFormat: HH:mm:ss
+  messagePrefix: 
+  enableExport: 1
+  exportFileName: eldritch_logs
+  exportDirectory: 
+  useContextObjects: 1
+  suppressUnityStackTrace: 0
+  filterLoggerFrames: 1

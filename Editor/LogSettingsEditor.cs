@@ -1,204 +1,194 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Dto;
+using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Visuals;
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-[CustomEditor(typeof(LogSettings))]
-public class LogSettingsEditor : Editor
+namespace EldritchGames.EldritchLogger.UI
 {
-    private bool showAdvanced = false;
-
-    public override void OnInspectorGUI()
+    [CustomEditor(typeof(LogSettings))]
+    public class LogSettingsEditor : Editor
     {
-        LogSettings settings = (LogSettings)target;
+        private bool showAdvanced = false;
 
-        DrawPresets(settings);
-        DrawLogLevel(settings);
-        DrawCategorySection(settings);
-        DrawValidation(settings);
-        DrawAdvanced(settings);
-        DrawPreview(settings);
+        public override void OnInspectorGUI()
+        {
+            LogSettings settings = (LogSettings)target;
 
-        if (GUI.changed)
-        {
-            EditorUtility.SetDirty(settings);
-        }
-    }
+            DrawPresets(settings);
+            DrawLogLevel(settings);
+            DrawCategorySection(settings);
+            DrawValidation(settings);
+            DrawExport(settings);
+            DrawAdvanced(settings);
+            DrawPreview(settings);
 
-    private void DrawPresets(LogSettings settings)
-    {
-        EditorGUILayout.LabelField("Presets", EditorStyles.boldLabel);
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Verbose"))
-        {
-            settings.logLevel = LogLevel.Debug;
-            settings.enabledCategories = new List<LogCategory>(
-                (LogCategory[])System.Enum.GetValues(typeof(LogCategory)));
-        }
-        if (GUILayout.Button("Normal"))
-        {
-            settings.logLevel = LogLevel.Info;
-            settings.enabledCategories = new List<LogCategory>
+            if (GUI.changed)
             {
-                LogCategory.Gameplay,
-                LogCategory.UI,
-                LogCategory.Network
-            };
+                EditorUtility.SetDirty(settings);
+            }
         }
-        if (GUILayout.Button("Production"))
+
+        private void DrawPresets(LogSettings settings)
         {
-            settings.logLevel = LogLevel.Warning;
-            settings.enabledCategories = new List<LogCategory>
-            {
-                LogCategory.Gameplay,
-                LogCategory.Network
-            };
-        }
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.Space();
-    }
-
-    private void DrawLogLevel(LogSettings settings)
-    {
-        settings.logLevel = (LogLevel)EditorGUILayout.EnumPopup("Minimum Log Level", settings.logLevel);
-        EditorGUILayout.Space();
-    }
-
-    private void DrawCategorySection(LogSettings settings)
-    {
-        EditorGUILayout.LabelField("Enabled Categories", EditorStyles.boldLabel);
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Enable All"))
-        {
-            settings.enabledCategories = new List<LogCategory>(
-                (LogCategory[])System.Enum.GetValues(typeof(LogCategory)));
-        }
-        if (GUILayout.Button("Disable All"))
-        {
-            settings.enabledCategories.Clear();
-        }
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.Space();
-
-        foreach (LogCategory category in System.Enum.GetValues(typeof(LogCategory)))
-        {
-            bool enabled = settings.enabledCategories.Contains(category);
+            EditorGUILayout.LabelField("Presets", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(new GUIContent("Verbose", "Enable all categories and lowest log level for maximum detail.")))
+                settings.ApplyVerbosePreset();
+            if (GUILayout.Button(new GUIContent("Normal", "Balanced logging for development use.")))
+                settings.ApplyNormalPreset();
+            if (GUILayout.Button(new GUIContent("Production", "Minimal logging for release builds.")))
+                settings.ApplyProductionPreset();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space();
+        }
 
-            // Color preview
-            Color color = LogColors.GetColor(category);
-            GUIStyle colorBox = new GUIStyle(GUI.skin.box);
-            colorBox.normal.background = Texture2D.whiteTexture;
-            Color oldColor = GUI.color;
-            GUI.color = color;
-            GUILayout.Box("", colorBox, GUILayout.Width(20), GUILayout.Height(20));
-            GUI.color = oldColor;
+        private void DrawCategorySection(LogSettings settings)
+        {
+            EditorGUILayout.LabelField(new GUIContent("Enabled Categories", "Select which categories will produce logs."), EditorStyles.boldLabel);
 
-            // Toggle
-            bool newEnabled = EditorGUILayout.Toggle(category.ToString(), enabled);
-            if (newEnabled && !enabled)
-                settings.enabledCategories.Add(category);
-            else if (!newEnabled && enabled)
-                settings.enabledCategories.Remove(category);
-
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(new GUIContent("Enable All", "Enable logging for all categories.")))
+                settings.EnableAllCategories();
+            if (GUILayout.Button(new GUIContent("Disable All", "Disable logging for all categories.")))
+                settings.DisableAllCategories();
             EditorGUILayout.EndHorizontal();
         }
 
-        EditorGUILayout.Space();
-    }
-
-    private void DrawValidation(LogSettings settings)
-    {
-        if (settings.enabledCategories.Count == 0)
+        private void DrawLogLevel(LogSettings settings)
         {
-            EditorGUILayout.HelpBox("No categories enabled. No logs will be output.", MessageType.Warning);
+            settings.logLevel = (LogLevel)EditorGUILayout.EnumPopup(
+                new GUIContent("Minimum Log Level", "Logs below this level will be ignored."),
+                settings.logLevel);
+            EditorGUILayout.Space();
         }
-    }
 
-    private void DrawAdvanced(LogSettings settings)
-    {
-        showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced Settings");
-        if (showAdvanced)
+        private void DrawValidation(LogSettings settings)
         {
-            EditorGUILayout.LabelField("Timestamp Format", EditorStyles.boldLabel);
-            settings.timestampFormat = EditorGUILayout.TextField(settings.timestampFormat);
-
-            EditorGUILayout.LabelField("Message Prefix", EditorStyles.boldLabel);
-            settings.messagePrefix = EditorGUILayout.TextField(settings.messagePrefix);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Stack Trace Settings", EditorStyles.boldLabel);
-
-            settings.infoTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Info/Debug Trace", settings.infoTrace);
-            settings.warningTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Warning Trace", settings.warningTrace);
-            settings.errorTrace = (StackTraceMode)EditorGUILayout.EnumPopup("Error/Critical Trace", settings.errorTrace);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Context Settings", EditorStyles.boldLabel);
-
-            settings.useContextObjects = EditorGUILayout.Toggle("Use Context Objects", settings.useContextObjects);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Exception Filtering", EditorStyles.boldLabel);
-
-            settings.filterLoggerFrames = EditorGUILayout.Toggle("Filter Logger Internals", settings.filterLoggerFrames);
+            if (settings.enabledCategories.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No categories enabled. No logs will be output.", MessageType.Warning);
+            }
         }
-        EditorGUILayout.Space();
-    }
-    private void DrawPreview(LogSettings settings)
-    {
-        EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
 
-        // Build a sample LogEntry
-        var sampleEntry = new LogEntry
+        private void DrawAdvanced(LogSettings settings)
         {
-            Timestamp = System.DateTime.Now,
-            Level = settings.logLevel,
-            Category = LogCategory.Gameplay,
-            Message = $"{settings.messagePrefix} Sample log message",
-            Metadata = new Dictionary<string, object>
+            showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced Settings");
+            if (showAdvanced)
+            {
+                EditorGUILayout.LabelField("Timestamp Format", EditorStyles.boldLabel);
+                settings.timestampFormat = EditorGUILayout.TextField(
+                    new GUIContent("Format", "Custom date/time format string (e.g. yyyy-MM-dd HH:mm:ss)."),
+                    settings.timestampFormat);
+
+                EditorGUILayout.LabelField("Message Prefix", EditorStyles.boldLabel);
+                settings.messagePrefix = EditorGUILayout.TextField(
+                    new GUIContent("Prefix", "Optional text prepended to every log message."),
+                    settings.messagePrefix);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Stack Trace Settings", EditorStyles.boldLabel);
+
+                settings.suppressUnityStackTrace = EditorGUILayout.Toggle(
+                    new GUIContent("Suppress Unity Stack Trace", "If enabled, Unity's automatic stack traces will be suppressed. EldritchLogger will handle exception traces itself."),
+                    settings.suppressUnityStackTrace);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Context Settings", EditorStyles.boldLabel);
+
+                settings.useContextObjects = EditorGUILayout.Toggle(
+                    new GUIContent("Use Context Objects", "Attach Unity GameObject/Component context to logs."),
+                    settings.useContextObjects);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Exception Filtering", EditorStyles.boldLabel);
+
+                settings.filterLoggerFrames = EditorGUILayout.Toggle(
+                    new GUIContent("Filter Logger Internals", "Remove logger framework internals from stack traces."),
+                    settings.filterLoggerFrames);
+            }
+            EditorGUILayout.Space();
+        }
+
+        private void DrawPreview(LogSettings settings)
         {
-            { "GameObject", "PlayerPawn" }
-        },
-            Exception = new System.Exception("Preview exception message")
-        };
+            EditorGUILayout.LabelField(new GUIContent("Preview", "Shows a sample log entry with current settings applied."), EditorStyles.boldLabel);
 
-        string preview = sampleEntry.ToString();
+            var sampleDto = SampleDto(settings);
+            var formatter = new LogEntryFormatter(settings);
+            string preview = formatter.Format(sampleDto);
 
-        // Style with rich text enabled
-        GUIStyle richTextStyle = new GUIStyle(EditorStyles.label)
+            GUIStyle richTextStyle = new GUIStyle(EditorStyles.label)
+            {
+                richText = true,
+                wordWrap = true
+            };
+
+            EditorGUILayout.LabelField(preview, richTextStyle, GUILayout.Height(100));
+        }
+
+        private void DrawExport(LogSettings settings)
         {
-            richText = true,
-            wordWrap = true
-        };
+            EditorGUILayout.LabelField("Export Settings", EditorStyles.boldLabel);
 
-        // Severity coloring
-        string severityColor = settings.logLevel switch
+            settings.enableExport = EditorGUILayout.Toggle(
+                new GUIContent("Enable Export", "Toggle to write logs to disk."),
+                settings.enableExport);
+
+            if (settings.enableExport)
+            {
+                EditorGUILayout.LabelField("Formats", EditorStyles.boldLabel);
+
+                // Ensure list is initialized
+                if (settings.exportFormats == null)
+                    settings.exportFormats = new List<ExportFormat>();
+
+                DrawFormatToggle(settings, ExportFormat.Json, "JSON");
+                DrawFormatToggle(settings, ExportFormat.Xml, "XML");
+                DrawFormatToggle(settings, ExportFormat.Text, "Text");
+
+                settings.exportFileName = EditorGUILayout.TextField(
+                    new GUIContent("File Name", "Name of the log file without extension."),
+                    settings.exportFileName);
+
+                settings.exportDirectory = EditorGUILayout.TextField(
+                    new GUIContent("Directory", "Target directory for exported logs. Leave empty to use Application.persistentDataPath."),
+                    settings.exportDirectory);
+
+                EditorGUILayout.HelpBox(
+                    "If directory is empty, logs will be written to Application.persistentDataPath.",
+                    MessageType.Info);
+            }
+
+            EditorGUILayout.Space();
+        }
+
+        private void DrawFormatToggle(LogSettings settings, ExportFormat fmt, string label)
         {
-            LogLevel.Warning => "yellow",
-            LogLevel.Error => "red",
-            LogLevel.Critical => "red",
-            LogLevel.Debug => "white",
-            LogLevel.Info => "white",
-            _ => "white"
-        };
+            bool enabled = settings.exportFormats.Contains(fmt);
+            bool newEnabled = EditorGUILayout.Toggle(label, enabled);
+            if (newEnabled && !enabled)
+                settings.exportFormats.Add(fmt);
+            else if (!newEnabled && enabled)
+                settings.exportFormats.Remove(fmt);
+        }
 
-        // Category coloring (using your LogColors)
-        string categoryColor = LogColors.GetColorString(LogCategory.Gameplay);
 
-        // Replace category text with colored version
-        string coloredPreview = preview.Replace(
-            "Gameplay",
-            $"<color={categoryColor}>Gameplay</color>"
-        );
-
-        // Wrap entire preview in severity color
-        coloredPreview = $"<color={severityColor}>{coloredPreview}</color>";
-
-        EditorGUILayout.LabelField(coloredPreview, richTextStyle, GUILayout.Height(100));
+        public static LogEntryDto SampleDto(LogSettings settings) =>
+            new LogEntryDto
+            {
+                Timestamp = DateTime.Now,
+                Level = settings.logLevel.ToString(),
+                Category = LogCategory.Gameplay.ToString(),
+                Message = $"{settings.messagePrefix} Sample log message",
+                Metadata = new List<MetadataEntry>
+                {
+                    new() { Key = "GameObject", Value = "PlayerPawn" }
+                },
+                Exception = "Preview exception message"
+            };
     }
 }

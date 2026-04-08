@@ -1,264 +1,161 @@
 using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Dto;
+using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Linq;
 using UnityEngine;
-using UnityEngine.TestTools;
 
-[TestFixture]
-public class EldritchLoggerTests
+namespace EldritchGames.EldritchLogger.Tests
 {
-    private LogSettings settings;
-
-    [SetUp]
-    public void Setup()
+    // Stub exporters with names matching the real ones
+    public class JsonLogExporterStub : ILogExporter
     {
-        settings = ScriptableObject.CreateInstance<LogSettings>();
-        settings.logLevel = LogLevel.Debug;
-        settings.enabledCategories.Add(LogCategory.General);
-        EldritchLogger.Initialize(settings);
+        public List<(object dto, string path)> Calls = new();
+        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
     }
 
-    [Test]
-    public void Initialize_SetsCurrentSettings()
+    public class XmlLogExporterStub : ILogExporter
     {
-        Assert.AreEqual(settings, EldritchLogger.CurrentSettings);
+        public List<(object dto, string path)> Calls = new();
+        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
     }
 
-    [Test]
-    public void Initialize_NullSettings_ShowsWarning()
+    public class TextLogExporterStub : ILogExporter
     {
-        EldritchLogger.Initialize(null);
-        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
+        public List<(object dto, string path)> Calls = new();
+        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
     }
 
-    [TestCase(StackTraceMode.None, StackTraceLogType.None)]
-    [TestCase(StackTraceMode.ScriptOnly, StackTraceLogType.ScriptOnly)]
-    [TestCase(StackTraceMode.Full, StackTraceLogType.Full)]
-    public void Initialize_MapsStackTraceModes(StackTraceMode mode, StackTraceLogType expected)
+    [TestFixture]
+    public class EldritchLoggerTests
     {
-        settings.infoTrace = mode;
-        EldritchLogger.Initialize(settings);
-        Assert.AreEqual(expected, Application.GetStackTraceLogType(LogType.Log));
-    }
+        private LogSettings CreateSettings(params ExportFormat[] formats)
+        {
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            settings.name = "TestLogger";
+            settings.logLevel = LogLevel.Debug;
+            settings.exportFormats = formats.ToList();
+            settings.exportDirectory = "unused"; // irrelevant with stubs
+            settings.exportFileName = "session";
+            return settings;
+        }
 
-    [Test]
-    public void Log_BelowThreshold_DoesNotLog()
-    {
-        settings.logLevel = LogLevel.Error;
-        EldritchLogger.Initialize(settings);
+        private void InjectStubExporters(EldritchLogger logger, params ILogExporter[] stubs)
+        {
+            var exportersField = typeof(EldritchLogger)
+                .GetField("exporters", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            exportersField.SetValue(logger, stubs.ToList());
+        }
 
-        LogAssert.NoUnexpectedReceived();
-        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Should not log");
-    }
+        [Test]
+        public void Constructor_ShouldInitializeExporters()
+        {
+            var settings = CreateSettings(ExportFormat.Json, ExportFormat.Xml);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void Log_DisabledCategory_DoesNotLog()
-    {
-        settings.enabledCategories.Clear();
-        EldritchLogger.Initialize(settings);
+            Assert.That(logger.Exporters.Count(), Is.EqualTo(2));
+            Assert.That(EldritchLogger.Instance, Is.SameAs(logger));
+        }
 
-        LogAssert.NoUnexpectedReceived();
-        EldritchLogger.Log(LogLevel.Info, LogCategory.Network, "Should not log");
-    }
+        [Test]
+        public void Dispose_ShouldClearInstance()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void Log_InfoLevel_OutputsDebugLog()
-    {
-        LogAssert.Expect(LogType.Log, new Regex("Test message"));
-        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Test message");
-    }
+            logger.Dispose();
 
-    [Test]
-    public void Log_WarningLevel_OutputsWarningLog()
-    {
-        LogAssert.Expect(LogType.Warning, new Regex("Warn message"));
-        EldritchLogger.Log(LogLevel.Warning, LogCategory.General, "Warn message");
-    }
+            Assert.That(EldritchLogger.Instance, Is.Null);
+        }
 
-    [Test]
-    public void Log_ErrorLevel_OutputsErrorLog()
-    {
-        LogAssert.Expect(LogType.Error, new Regex("Error message"));
-        EldritchLogger.Log(LogLevel.Error, LogCategory.General, "Error message");
-    }
+        [Test]
+        public void Log_ShouldCallStubExporter()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void Log_WithException_AppendsStackTrace()
-    {
-        var ex = new InvalidOperationException("Boom!");
-        LogAssert.Expect(LogType.Error, new Regex("Boom!"));
-        EldritchLogger.Log(LogLevel.Error, LogCategory.General, "Error occurred", null, ex);
-    }
+            var stub = new JsonLogExporterStub();
+            InjectStubExporters(logger, stub);
 
-    [Test]
-    public void Log_WithGameObjectMetadata_AttachesContext()
-    {
-        var go = new GameObject("ContextGO");
-        var metadata = new Dictionary<string, object> { { "GameObject", "ContextGO" } };
+            logger.Log(LogLevel.Info, LogCategory.General, "Test message");
 
-        LogAssert.Expect(LogType.Log, new Regex("Context test"));
-        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Context test", metadata);
-    }
+            Assert.That(stub.Calls.Count, Is.EqualTo(1));
+            Assert.That(stub.Calls[0].path, Does.Contain("session.json"));
+        }
 
-    [Test]
-    public void CleanStackTrace_FiltersLoggerFrames()
-    {
-        settings.filterLoggerFrames = true;
-        EldritchLogger.Initialize(settings);
+        [Test]
+        public void Log_ShouldRespectLogLevel()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            settings.logLevel = LogLevel.Warning;
 
-        var ex = new Exception("Test") { };
-        ex.Data["StackTrace"] = "EldritchGames.EldritchLogger.SomeMethod\nOtherFrame";
+            using var logger = new EldritchLogger(settings);
 
-        var cleaned = EldritchLogger.CurrentSettings.filterLoggerFrames;
-        Assert.IsTrue(cleaned);
-    }
-}
-[TestFixture]
-public class EldritchLoggerUninitializedTests
-{
-    [SetUp]
-    public void Setup()
-    {
-        // Force logger into uninitialized state
-        EldritchLogger.Initialize(null);
-    }
+            var stub = new JsonLogExporterStub();
+            InjectStubExporters(logger, stub);
 
-    [Test]
-    public void Log_WithoutInitialization_ShowsWarning()
-    {
-        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
-        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Test");
-    }
+            logger.Log(LogLevel.Debug, LogCategory.General, "Should not log");
 
-    [Test]
-    public void Log_WithoutInitialization_DoesNotProduceInfoLog()
-    {
-        // Expect only the warning, not the info log
-        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
-        EldritchLogger.Log(LogLevel.Info, LogCategory.General, "Message that should not appear");
-        LogAssert.NoUnexpectedReceived();
-    }
+            Assert.That(stub.Calls.Count, Is.EqualTo(0));
+        }
 
-    [Test]
-    public void Initialize_Null_DoesNotCrash()
-    {
-        // Just calling Initialize(null) should not throw
-        Assert.DoesNotThrow(() => EldritchLogger.Initialize(null));
-    }
+        [Test]
+        public void AtDebug_ShouldReturnLogBuilder()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void Log_BelowThreshold_WhenUninitialized_StillShowsWarning()
-    {
-        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
-        EldritchLogger.Log(LogLevel.Debug, LogCategory.General, "Debug message");
-    }
+            var builder = logger.AtDebug(LogCategory.General);
 
-    [Test]
-    public void Log_DisabledCategory_WhenUninitialized_StillShowsWarning()
-    {
-        LogAssert.Expect(LogType.Warning, "EldritchLogger not initialized with LogSettings!");
-        EldritchLogger.Log(LogLevel.Info, LogCategory.Network, "Network message");
-    }
-}
-[TestFixture]
-public class LogBuilderTests
-{
-    private LogSettings settings;
+            Assert.That(builder, Is.Not.Null);
+            Assert.That(builder.GetType().Name, Is.EqualTo("LogBuilder"));
+        }
 
-    [SetUp]
-    public void Setup()
-    {
-        settings = ScriptableObject.CreateInstance<LogSettings>();
-        settings.logLevel = LogLevel.Debug;
-        settings.enabledCategories.Add(LogCategory.General);
-        EldritchLogger.Initialize(settings);
-    }
+        [Test]
+        public void AtInfo_ShouldReturnLogBuilder()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void AtDebug_BuildsDebugLevel()
-    {
-        LogAssert.Expect(LogType.Log, new Regex("Debug message"));
-        EldritchLogger.AtDebug().Log("Debug message");
-    }
+            var builder = logger.AtInfo(LogCategory.General);
 
-    [Test]
-    public void AtInfo_BuildsInfoLevel()
-    {
-        LogAssert.Expect(LogType.Log, new Regex("Info message"));
-        EldritchLogger.AtInfo().Log("Info message");
-    }
+            Assert.That(builder, Is.Not.Null);
+        }
 
-    [Test]
-    public void AtWarning_BuildsWarningLevel()
-    {
-        LogAssert.Expect(LogType.Warning, new Regex("Warn message"));
-        EldritchLogger.AtWarning().Log("Warn message");
-    }
+        [Test]
+        public void AtWarning_ShouldReturnLogBuilder()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void AtError_BuildsErrorLevel()
-    {
-        LogAssert.Expect(LogType.Error, new Regex("Error message"));
-        EldritchLogger.AtError().Log("Error message");
-    }
+            var builder = logger.AtWarning(LogCategory.General);
 
-    [Test]
-    public void AtCritical_BuildsCriticalLevel()
-    {
-        LogAssert.Expect(LogType.Error, new Regex("Critical message"));
-        EldritchLogger.AtCritical().Log("Critical message");
-    }
+            Assert.That(builder, Is.Not.Null);
+        }
 
-    [Test]
-    public void Category_SetsCategory()
-    {
-        LogAssert.Expect(LogType.Log, new Regex("Category test"));
-        EldritchLogger.AtInfo().Category(LogCategory.UI).Log("Category test");
-    }
+        [Test]
+        public void AtError_ShouldReturnLogBuilder()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void AddKeyValue_AddsMetadata()
-    {
-        LogAssert.Expect(LogType.Log, new Regex("CustomKey=CustomValue"));
-        EldritchLogger.AtInfo().AddKeyValue("CustomKey", "CustomValue").Log("Info with metadata");
-    }
+            var builder = logger.AtError(LogCategory.General);
 
-    [Test]
-    public void WithException_AttachesException()
-    {
-        var ex = new InvalidOperationException("Boom!");
-        LogAssert.Expect(LogType.Error, new Regex("Boom!"));
-        EldritchLogger.AtError().WithException(ex).Log("Error with exception");
-    }
+            Assert.That(builder, Is.Not.Null);
+        }
 
-    [Test]
-    public void WithEvent_AttachesDelegateEvent()
-    {
-        Action testAction = () => { };
-        LogAssert.Expect(LogType.Log, new Regex("C#Event="));
-        EldritchLogger.AtInfo().WithEvent(testAction).Log("Info with event");
-    }
+        [Test]
+        public void AtCritical_ShouldReturnLogBuilder()
+        {
+            var settings = CreateSettings(ExportFormat.Json);
+            using var logger = new EldritchLogger(settings);
 
-    [Test]
-    public void WithComponent_AttachesComponentContext()
-    {
-        var go = new GameObject("TestGO");
-        var comp = go.AddComponent<BoxCollider>();
+            var builder = logger.AtCritical(LogCategory.General);
 
-        LogAssert.Expect(LogType.Log, new Regex("BoxCollider@TestGO"));
-        EldritchLogger.AtDebug().WithComponent(comp).Log("Debug with component");
-    }
-
-    [Test]
-    public void WithComponent_AttachesGameObjectName()
-    {
-        var go = new GameObject("ContextGO");
-        var comp = go.AddComponent<BoxCollider>();
-
-        LogAssert.Expect(LogType.Log, new Regex("ContextGO"));
-        EldritchLogger.AtInfo().WithComponent(comp).Log("Info with GameObject context");
+            Assert.That(builder, Is.Not.Null);
+        }
     }
 }
