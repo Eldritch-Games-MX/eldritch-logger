@@ -14,6 +14,7 @@ namespace EldritchGames.EldritchLogger
         public string Message { get; set; }
         public Dictionary<string, object> Metadata { get; set; }
 
+        // New field
         public Exception Exception { get; set; }
 
         public override string ToString()
@@ -27,6 +28,7 @@ namespace EldritchGames.EldritchLogger
 
             string baseMessage = $"[{Timestamp.ToString(format)}] [{Level}] {categoryText} {prefix}{Message} {FormatMetadata()}";
 
+            // Append exception details if present
             if (Exception != null)
             {
                 string trace = Exception.StackTrace ?? "";

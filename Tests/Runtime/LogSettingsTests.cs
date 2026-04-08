@@ -1,25 +1,72 @@
+using EldritchGames.EldritchLogger;
 using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
-using UnityEditor;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
+    [TestFixture]
     public class LogSettingsTests
     {
-        [Test]
-        public void CategoryEnableDisable_WorksCorrectly()
+        private LogSettings settings;
+
+        [SetUp]
+        public void Setup()
         {
-            var settings = ScriptableObject.CreateInstance<LogSettings>();
-            settings.enabledCategories.Clear(); // Reset defaults
+            settings = ScriptableObject.CreateInstance<LogSettings>();
+        }
 
-            Assert.IsFalse(settings.IsCategoryEnabled(LogCategory.UI));
+        [Test]
+        public void ApplyVerbosePreset_SetsDebugAndAllCategories()
+        {
+            settings.ApplyVerbosePreset();
 
-            settings.enabledCategories.Add(LogCategory.UI);
-            Assert.IsTrue(settings.IsCategoryEnabled(LogCategory.UI));
+            Assert.AreEqual(LogLevel.Debug, settings.logLevel);
+            CollectionAssert.AreEquivalent(
+                (LogCategory[])Enum.GetValues(typeof(LogCategory)),
+                settings.enabledCategories);
+        }
 
-            settings.enabledCategories.Remove(LogCategory.UI);
-            Assert.IsFalse(settings.IsCategoryEnabled(LogCategory.UI));
+        [Test]
+        public void ApplyNormalPreset_SetsInfoAndExpectedCategories()
+        {
+            settings.ApplyNormalPreset();
+
+            Assert.AreEqual(LogLevel.Info, settings.logLevel);
+            CollectionAssert.AreEquivalent(
+                new[] { LogCategory.Gameplay, LogCategory.UI, LogCategory.Network },
+                settings.enabledCategories);
+        }
+
+        [Test]
+        public void ApplyProductionPreset_SetsWarningAndExpectedCategories()
+        {
+            settings.ApplyProductionPreset();
+
+            Assert.AreEqual(LogLevel.Warning, settings.logLevel);
+            CollectionAssert.AreEquivalent(
+                new[] { LogCategory.Gameplay, LogCategory.Network },
+                settings.enabledCategories);
+        }
+
+        [Test]
+        public void EnableAllCategories_SetsAll()
+        {
+            settings.EnableAllCategories();
+
+            CollectionAssert.AreEquivalent(
+                (LogCategory[])Enum.GetValues(typeof(LogCategory)),
+                settings.enabledCategories);
+        }
+
+        [Test]
+        public void DisableAllCategories_ClearsAll()
+        {
+            settings.DisableAllCategories();
+
+            Assert.IsEmpty(settings.enabledCategories);
         }
     }
 }
