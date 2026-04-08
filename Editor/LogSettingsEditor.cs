@@ -48,15 +48,53 @@ namespace EldritchGames.EldritchLogger.UI
 
         private void DrawCategorySection(LogSettings settings)
         {
-            EditorGUILayout.LabelField(new GUIContent("Enabled Categories", "Select which categories will produce logs."), EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent("Categories", "Enable/disable categories and customize their colors."), EditorStyles.boldLabel);
 
+            // Ensure lists are initialized
+            if (settings.enabledCategories == null)
+                settings.enabledCategories = new List<LogCategory>();
+            if (settings.categoryColors == null)
+                settings.categoryColors = new List<CategoryColor>();
+
+            // Make sure every category has a color entry
+            foreach (LogCategory cat in Enum.GetValues(typeof(LogCategory)))
+            {
+                if (!settings.categoryColors.Exists(c => c.category == cat))
+                    settings.categoryColors.Add(new CategoryColor(cat, Color.white));
+            }
+
+            // Draw each category row
+            foreach (var entry in settings.categoryColors)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                // Toggle for enabling/disabling category
+                bool enabled = settings.enabledCategories.Contains(entry.category);
+                bool newEnabled = EditorGUILayout.ToggleLeft(entry.category.ToString(), enabled, GUILayout.Width(150));
+                if (newEnabled && !enabled)
+                    settings.enabledCategories.Add(entry.category);
+                else if (!newEnabled && enabled)
+                    settings.enabledCategories.Remove(entry.category);
+
+                // Color picker
+                entry.color = EditorGUILayout.ColorField(entry.color);
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.Space();
+
+            // Bulk actions
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(new GUIContent("Enable All", "Enable logging for all categories.")))
                 settings.EnableAllCategories();
             if (GUILayout.Button(new GUIContent("Disable All", "Disable logging for all categories.")))
                 settings.DisableAllCategories();
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space();
         }
+
 
         private void DrawLogLevel(LogSettings settings)
         {
