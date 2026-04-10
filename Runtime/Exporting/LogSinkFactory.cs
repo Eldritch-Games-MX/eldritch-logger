@@ -1,14 +1,24 @@
 using EldritchGames.EldritchLogger.Core;
-using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Settings;
+using System;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Exporting
 {
-    public static class LogSinkFactory
+    public class LogSinkFactory
     {
-        public static IDictionary<SinkCategory, List<ILogSink>> CreateSinks(LogSettings settings, Core.EldritchLogger logger)
+        private readonly LogSettings settings;
+        private readonly LogPathResolver pathResolver;
+        private readonly ILogFileWriter fileWriter;
+
+        public LogSinkFactory(LogSettings settings)
+        {
+            this.settings = settings != null ? settings : throw new ArgumentNullException(nameof(settings));
+            this.pathResolver = new LogPathResolver(settings);
+            this.fileWriter = new LogFileWriter();
+        }
+
+        public IDictionary<SinkCategory, List<ILogSink>> CreateSinks()
         {
             var sinks = new Dictionary<SinkCategory, List<ILogSink>>();
 
@@ -21,16 +31,18 @@ namespace EldritchGames.EldritchLogger.Exporting
 
             foreach (var fmt in settings.exportFormats)
             {
+                string path = pathResolver.ResolvePath(fmt);
+
                 switch (fmt)
                 {
                     case ExportFormat.Json:
-                        AddSink(new JsonLogExporter(logger.GetExportPath(ExportFormat.Json), new LogFileWriter()));
+                        AddSink(new JsonLogExporter(path, fileWriter));
                         break;
                     case ExportFormat.Xml:
-                        AddSink(new XmlLogExporter(logger.GetExportPath(ExportFormat.Xml), new LogFileWriter()));
+                        AddSink(new XmlLogExporter(path, fileWriter));
                         break;
                     case ExportFormat.Text:
-                        AddSink(new TextLogExporter(settings, new LogFileWriter()));
+                        AddSink(new TextLogExporter(path, settings, fileWriter));
                         break;
                 }
             }
@@ -40,5 +52,4 @@ namespace EldritchGames.EldritchLogger.Exporting
             return sinks;
         }
     }
-
 }
