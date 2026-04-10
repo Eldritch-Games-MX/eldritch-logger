@@ -1,6 +1,5 @@
 using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Domain;
-using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Mapper;
@@ -54,8 +53,8 @@ namespace EldritchGames.EldritchLogger.Tests
             settings.exportDirectory = tempDir;
             settings.exportFileName = "log";
 
-            var exporter = new TextLogExporter(settings, new LogFileWriter());
             string path = Path.Combine(tempDir, "log.txt");
+            var exporter = new TextLogExporter(path, settings, new LogFileWriter());
 
             var dto = mapper.ToDto(sampleEntry);
             await exporter.Export(dto, path);
