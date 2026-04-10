@@ -1,55 +1,65 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
 
 namespace EldritchGames.EldritchLogger.Exporting
 {
-    public class XmlLogExporter : ILogExporter, IDisposable
+    public class XmlLogExporter : IAsyncLogExporter, IDisposable
     {
-        private const string XmlDeclaration = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
-        private const string RootOpenTag = "<Logs>";
-        private const string RootCloseTag = "</Logs>";
+        private readonly ILogFileWriter fileWriter;
+        private readonly XmlSerializer serializer = new(typeof(LogEntryDto));
+        private bool initialized;
 
-        private bool initialized = false;
-        private StreamWriter writer;
-        private XmlSerializer serializer = new XmlSerializer(typeof(LogEntryDto));
+        public string TargetPath { get; }
+        public SinkCategory Category => SinkCategory.Persistent;
 
-        public void Export(LogEntryDto dto, string path)
+        public XmlLogExporter(string path, ILogFileWriter fileWriter)
         {
-            if (!initialized)
+            if (string.IsNullOrEmpty(path))
+                throw new ArgumentException("Export path must be provided.", nameof(path));
+            this.fileWriter = fileWriter ?? throw new ArgumentNullException(nameof(fileWriter));
+
+            var dir = Path.GetDirectoryName(path);
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            TargetPath = path;
+        }
+
+        public void OnLogReceived(LogEntryDto entry) =>
+            Export(entry, TargetPath).GetAwaiter().GetResult();
+
+        public async Task Export(LogEntryDto dto, string path)
+        {
+            await Task.Run(() =>
             {
-                writer = new StreamWriter(path, append: false);
-                writer.WriteLine(XmlDeclaration);
-                writer.WriteLine(RootOpenTag);
-                initialized = true;
-            }
+                if (!initialized)
+                {
+                    fileWriter.WriteLine(path, "<?xml version=\"1.0\" encoding=\"utf-8\"?>", append: false);
+                    fileWriter.WriteLine(path, "<Logs>");
+                    initialized = true;
+                }
 
-            // Suppress declaration and namespaces for each entry
-            var settings = new XmlWriterSettings
-            {
-                OmitXmlDeclaration = true,
-                Indent = true
-            };
+                var settings = new XmlWriterSettings { OmitXmlDeclaration = true, Indent = true };
+                var ns = new XmlSerializerNamespaces();
+                ns.Add("", "");
 
-            var ns = new XmlSerializerNamespaces();
-            ns.Add("", ""); // remove xsi/xsd namespaces
-
-            using var xmlWriter = XmlWriter.Create(writer, settings);
-            serializer.Serialize(xmlWriter, dto, ns);
-
-            writer.Flush();
+                using var stringWriter = new StringWriter();
+                using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+                serializer.Serialize(xmlWriter, dto, ns);
+                fileWriter.WriteLine(path, stringWriter.ToString());
+            });
         }
 
         public void Dispose()
         {
-            if (initialized)
-            {
-                writer.WriteLine(RootCloseTag);
-                writer.Dispose();
-                initialized = false;
-            }
+            fileWriter.WriteLine(TargetPath, "</Logs>");
+            if (fileWriter is IDisposable disposable)
+                disposable.Dispose();
         }
     }
 }

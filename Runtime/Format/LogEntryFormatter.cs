@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Visuals;

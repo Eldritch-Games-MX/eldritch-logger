@@ -1,4 +1,4 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Domain;
 using EldritchGames.EldritchLogger.Dto;
 using UnityEngine;
 

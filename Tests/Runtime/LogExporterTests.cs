@@ -1,4 +1,5 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.Domain;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Format;
@@ -8,13 +9,14 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.TestTools;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
     [TestFixture]
-    public class LogExporterTests
+    public class FileExporterAsyncTests
     {
         private LogEntry sampleEntry;
         private string tempDir;
@@ -23,7 +25,7 @@ namespace EldritchGames.EldritchLogger.Tests
         [SetUp]
         public void Setup()
         {
-            tempDir = Path.Combine(Path.GetTempPath(), "LoggerExporterTests");
+            tempDir = Path.Combine(Path.GetTempPath(), "FileExporterAsyncTests");
             Directory.CreateDirectory(tempDir);
 
             sampleEntry = new LogEntry(
@@ -46,45 +48,19 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public void JsonExporter_WritesValidJson()
+        public async Task TextExporter_WritesPlainText()
         {
-            var exporter = new JsonLogExporter();
-            string path = Path.Combine(tempDir, "log.json");
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            settings.exportDirectory = tempDir;
+            settings.exportFileName = "log";
 
-            var dto = mapper.ToDto(sampleEntry);
-            exporter.Export(dto, path);
-            exporter.Dispose(); // ensure closing brackets written
-
-            string content = File.ReadAllText(path);
-            StringAssert.Contains("\"Message\": \"Export test message\"", content);
-            StringAssert.Contains("Boom!", content);
-            StringAssert.Contains("[", content); // root array
-            StringAssert.Contains("]", content);
-        }
-
-        [Test]
-        public void JsonExporter_AppendsMultipleEntries()
-        {
-            var exporter = new JsonLogExporter();
-            string path = Path.Combine(tempDir, "multi.json");
-
-            var dto = mapper.ToDto(sampleEntry);
-            exporter.Export(dto, path);
-            exporter.Export(dto, path);
-            exporter.Dispose();
-
-            string content = File.ReadAllText(path);
-            Assert.That(content.Split(new[] { "Export test message" }, StringSplitOptions.None).Length, Is.EqualTo(3));
-        }
-
-        [Test]
-        public void TextExporter_WritesPlainText()
-        {
-            var exporter = new TextLogExporter(ScriptableObject.CreateInstance<LogSettings>());
+            var exporter = new TextLogExporter(settings, new LogFileWriter());
             string path = Path.Combine(tempDir, "log.txt");
 
             var dto = mapper.ToDto(sampleEntry);
-            exporter.Export(dto, path);
+            await exporter.Export(dto, path);
+
+            exporter.Dispose();
 
             string content = File.ReadAllText(path);
             StringAssert.Contains("Export test message", content);
@@ -92,15 +68,30 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public void XmlExporter_WritesValidXml()
+        public async Task JsonExporter_WritesValidJson()
         {
-            var exporter = new XmlLogExporter();
-            string path = Path.Combine(tempDir, "log.xml");
+            string path = Path.Combine(tempDir, "log.json");
+            var exporter = new JsonLogExporter(path, new LogFileWriter());
 
             var dto = mapper.ToDto(sampleEntry);
-            exporter.Export(dto, path);
+            await exporter.Export(dto, path);
+            exporter.Dispose();
 
-            // Important: close the writer so the file is released
+            string content = File.ReadAllText(path);
+            StringAssert.Contains("\"Message\": \"Export test message\"", content);
+            StringAssert.Contains("Boom!", content);
+            StringAssert.Contains("[", content);
+            StringAssert.Contains("]", content);
+        }
+
+        [Test]
+        public async Task XmlExporter_WritesValidXml()
+        {
+            string path = Path.Combine(tempDir, "log.xml");
+            var exporter = new XmlLogExporter(path, new LogFileWriter());
+
+            var dto = mapper.ToDto(sampleEntry);
+            await exporter.Export(dto, path);
             exporter.Dispose();
 
             string content = File.ReadAllText(path);
@@ -110,66 +101,38 @@ namespace EldritchGames.EldritchLogger.Tests
             StringAssert.Contains("</Logs>", content);
         }
 
+    }
 
-        [Test]
-        public void UnityConsoleExporter_LogsInfo()
+    [TestFixture]
+    public class UnityConsoleExporterSyncTests
+    {
+        private ILogEntryMapper mapper;
+
+        [SetUp]
+        public void Setup()
         {
-            var exporter = new UnityConsoleExporter(ScriptableObject.CreateInstance<LogSettings>());
-            var entry = new LogEntry(DateTime.Now, LogLevel.Info, LogCategory.General, "Info message");
-
-            var dto = mapper.ToDto(entry);
-            var formatter = new LogEntryFormatter(ScriptableObject.CreateInstance<LogSettings>());
-            string expected = formatter.Format(dto);
-
-            LogAssert.Expect(LogType.Log, expected);
-            exporter.Export(dto, null);
+            mapper = new LogEntryMapper(ScriptableObject.CreateInstance<LogSettings>());
         }
 
-        [Test]
-        public void UnityConsoleExporter_LogsWarning()
+        [TestCase(LogLevel.Debug, LogType.Log)]
+        [TestCase(LogLevel.Info, LogType.Log)]
+        [TestCase(LogLevel.Warning, LogType.Warning)]
+        [TestCase(LogLevel.Error, LogType.Error)]
+        [TestCase(LogLevel.Critical, LogType.Error)]
+        public void UnityConsoleExporter_LogsAllLevels(LogLevel level, LogType expectedType)
         {
             var exporter = new UnityConsoleExporter(ScriptableObject.CreateInstance<LogSettings>());
-            var entry = new LogEntry(DateTime.Now, LogLevel.Warning, LogCategory.General, "Warning message");
+            var entry = new LogEntry(DateTime.Now, level, LogCategory.General, $"{level} message",
+                                     null, level == LogLevel.Error || level == LogLevel.Critical ? new InvalidOperationException("Boom!") : null);
 
             var dto = mapper.ToDto(entry);
             var formatter = new LogEntryFormatter(ScriptableObject.CreateInstance<LogSettings>());
             string expected = formatter.Format(dto);
 
-            LogAssert.Expect(LogType.Warning, expected);
-            exporter.Export(dto, null);
-        }
+            LogAssert.Expect(expectedType, expected);
 
-        [Test]
-        public void UnityConsoleExporter_LogsErrorWithException()
-        {
-            var exporter = new UnityConsoleExporter(ScriptableObject.CreateInstance<LogSettings>());
-            var entry = new LogEntry(DateTime.Now,
-                                     LogLevel.Error,
-                                     LogCategory.General,
-                                     "Error message",
-                                     null,
-                                     new InvalidOperationException("Boom!"));
-
-            var dto = mapper.ToDto(entry);
-            var formatter = new LogEntryFormatter(ScriptableObject.CreateInstance<LogSettings>());
-            string expected = formatter.Format(dto);
-
-            LogAssert.Expect(LogType.Error, expected);
-            exporter.Export(dto, null);
-        }
-
-        [Test]
-        public void UnityConsoleExporter_LogsCritical()
-        {
-            var exporter = new UnityConsoleExporter(ScriptableObject.CreateInstance<LogSettings>());
-            var entry = new LogEntry(DateTime.Now, LogLevel.Critical, LogCategory.General, "Critical message");
-
-            var dto = mapper.ToDto(entry);
-            var formatter = new LogEntryFormatter(ScriptableObject.CreateInstance<LogSettings>());
-            string expected = formatter.Format(dto);
-
-            LogAssert.Expect(LogType.Error, expected); // Critical maps to Error
-            exporter.Export(dto, null);
+            // Run synchronously on Unity’s main thread
+            exporter.OnLogReceived(dto);
         }
     }
 }

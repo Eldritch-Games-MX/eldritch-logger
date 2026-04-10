@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Settings;
@@ -51,6 +52,8 @@ namespace EldritchGames.EldritchLogger.UI
             EditorGUILayout.LabelField(new GUIContent("Categories", "Enable/disable categories and customize their colors."), EditorStyles.boldLabel);
 
             // Ensure lists are initialized
+            settings.enabledCategories ??= new List<LogCategory>();
+            settings.categoryColors ??= new List<CategoryColor>();
             if (settings.enabledCategories == null)
                 settings.enabledCategories = new List<LogCategory>();
             if (settings.categoryColors == null)
@@ -159,7 +162,7 @@ namespace EldritchGames.EldritchLogger.UI
             var formatter = new LogEntryFormatter(settings);
             string preview = formatter.Format(sampleDto);
 
-            GUIStyle richTextStyle = new GUIStyle(EditorStyles.label)
+            GUIStyle richTextStyle = new(EditorStyles.label)
             {
                 richText = true,
                 wordWrap = true
@@ -181,8 +184,7 @@ namespace EldritchGames.EldritchLogger.UI
                 EditorGUILayout.LabelField("Formats", EditorStyles.boldLabel);
 
                 // Ensure list is initialized
-                if (settings.exportFormats == null)
-                    settings.exportFormats = new List<ExportFormat>();
+                settings.exportFormats ??= new List<ExportFormat>();
 
                 DrawFormatToggle(settings, ExportFormat.Json, "JSON");
                 DrawFormatToggle(settings, ExportFormat.Xml, "XML");
@@ -195,6 +197,10 @@ namespace EldritchGames.EldritchLogger.UI
                 settings.exportDirectory = EditorGUILayout.TextField(
                     new GUIContent("Directory", "Target directory for exported logs. Leave empty to use Application.persistentDataPath."),
                     settings.exportDirectory);
+
+                settings.clearOnStartup = EditorGUILayout.Toggle(
+                    new GUIContent("Clear On Startup", "If enabled, previous session logs will be deleted when the logger initializes."),
+                    settings.clearOnStartup);
 
                 EditorGUILayout.HelpBox(
                     "If directory is empty, logs will be written to Application.persistentDataPath.",
@@ -216,7 +222,7 @@ namespace EldritchGames.EldritchLogger.UI
 
 
         public static LogEntryDto SampleDto(LogSettings settings) =>
-            new LogEntryDto
+            new()
             {
                 Timestamp = DateTime.Now,
                 Level = settings.logLevel.ToString(),

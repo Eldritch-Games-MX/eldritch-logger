@@ -1,16 +1,19 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Core;
 using System;
 using UnityEngine;
 
-[Serializable]
-public class CategoryColor
+namespace EldritchGames.EldritchLogger.Visuals
 {
-    public LogCategory category;
-    public Color color;
-
-    public CategoryColor(LogCategory category, Color color)
+    [Serializable]
+    public class CategoryColor
     {
-        this.category = category;
-        this.color = color;
+        public LogCategory category;
+        public Color color;
+
+        public CategoryColor(LogCategory category, Color color)
+        {
+            this.category = category;
+            this.color = color;
+        }
     }
 }

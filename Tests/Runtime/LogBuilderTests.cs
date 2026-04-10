@@ -1,8 +1,9 @@
-using EldritchGames.EldritchLogger;
 using EldritchGames.EldritchLogger.Builder;
+using EldritchGames.EldritchLogger.Core;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
@@ -19,45 +20,45 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public void Category_SetsCategory()
+        public async Task Category_SetsCategory()
         {
-            fakeLogger.AtInfo()
-                      .Category(LogCategory.UI)
-                      .Log("Category test");
+            await fakeLogger.AtInfo()
+                            .Category(LogCategory.UI)
+                            .Log("Category test");
 
             Assert.AreEqual(LogCategory.UI, fakeLogger.LastCategory);
         }
 
         [Test]
-        public void AddKeyValue_AddsMetadata()
+        public async Task AddKeyValue_AddsMetadata()
         {
-            fakeLogger.AtInfo()
-                      .AddKeyValue("CustomKey", "CustomValue")
-                      .Log("Info with metadata");
+            await fakeLogger.AtInfo()
+                            .AddKeyValue("CustomKey", "CustomValue")
+                            .Log("Info with metadata");
 
             Assert.AreEqual("CustomValue", fakeLogger.LastMetadata["CustomKey"]);
         }
 
         [Test]
-        public void WithException_AttachesException()
+        public async Task WithException_AttachesException()
         {
             var ex = new InvalidOperationException("Boom!");
-            fakeLogger.AtError()
-                      .WithException(ex)
-                      .Log("Error with exception");
+            await fakeLogger.AtError()
+                            .WithException(ex)
+                            .Log("Error with exception");
 
             Assert.AreEqual(ex, fakeLogger.LastException);
         }
 
         [Test]
-        public void WithComponent_AddsComponentContextAndGameObject()
+        public async Task WithComponent_AddsComponentContextAndGameObject()
         {
             var go = new GameObject("TestObject");
             var component = go.AddComponent<BoxCollider>();
 
-            fakeLogger.AtInfo()
-                      .WithComponent(component)
-                      .Log("Info with component");
+            await fakeLogger.AtInfo()
+                            .WithComponent(component)
+                            .Log("Info with component");
 
             Assert.AreEqual("BoxCollider@TestObject", fakeLogger.LastMetadata["ComponentContext"]);
             Assert.AreEqual("TestObject", fakeLogger.LastMetadata["GameObject"]);
@@ -75,7 +76,7 @@ namespace EldritchGames.EldritchLogger.Tests
             public Dictionary<string, object> LastMetadata { get; private set; }
             public Exception LastException { get; private set; }
 
-            public void Log(LogLevel level, LogCategory category, string message,
+            public Task Log(LogLevel level, LogCategory category, string message,
                             Dictionary<string, object> metadata = null, Exception exception = null)
             {
                 LastLevel = level;
@@ -83,6 +84,7 @@ namespace EldritchGames.EldritchLogger.Tests
                 LastMessage = message;
                 LastMetadata = metadata ?? new Dictionary<string, object>();
                 LastException = exception;
+                return Task.CompletedTask;
             }
 
             public ILogBuilder AtDebug(LogCategory category = LogCategory.General) =>

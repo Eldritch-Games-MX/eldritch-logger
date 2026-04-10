@@ -1,45 +1,42 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Settings;
+using System;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Exporting
 {
-    public class UnityConsoleExporter : ILogExporter
+    public class UnityConsoleExporter : ILogSink
     {
         private readonly LogSettings settings;
+        private readonly LogEntryFormatter formatter;
+
+        public SinkCategory Category => SinkCategory.Runtime;
 
         public UnityConsoleExporter(LogSettings settings)
         {
-            this.settings = settings;
+            this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            formatter = new LogEntryFormatter(settings);
         }
 
-        public void Export(LogEntryDto dto, string path)
+        public void OnLogReceived(LogEntryDto entry)
         {
-            var formatter = new LogEntryFormatter(settings);
-            string formatted = formatter.Format(dto);
+            string formatted = formatter.Format(entry);
+            UnityEngine.Object context = ResolveContext(entry);
 
-            Object context = ResolveContext(dto);
-
-            // If suppression is enabled, disable Unity's automatic stack trace
             if (settings.suppressUnityStackTrace)
-            {
-                Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
-                Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
-                Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.None);
-            }
+                SuppressUnityStackTraces();
 
-            switch (dto.Level)
+            switch (entry.Level)
             {
                 case "Debug":
                 case "Info":
                     Debug.Log(formatted, context);
                     break;
-
                 case "Warning":
                     Debug.LogWarning(formatted, context);
                     break;
-
                 case "Error":
                 case "Critical":
                     Debug.LogError(formatted, context);
@@ -47,8 +44,15 @@ namespace EldritchGames.EldritchLogger.Exporting
             }
         }
 
+        private void SuppressUnityStackTraces()
+        {
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.None);
+        }
 
-        private Object ResolveContext(LogEntryDto dto)
+        private UnityEngine.Object ResolveContext(LogEntryDto dto)
         {
             if (!settings.useContextObjects || dto.Metadata == null)
                 return null;
@@ -66,7 +70,7 @@ namespace EldritchGames.EldritchLogger.Exporting
             var compMeta = dto.Metadata.Find(m => m.Key == "Component");
             if (compMeta != null && !string.IsNullOrEmpty(compMeta.Value))
             {
-                var allObjects = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+                var allObjects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
                 foreach (var go in allObjects)
                 {
                     var comp = go.GetComponent(compMeta.Value);

@@ -1,3 +1,5 @@
+using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.Visuals;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,6 +21,9 @@ namespace EldritchGames.EldritchLogger.Settings
             LogCategory.Animation,
             LogCategory.Input,
         };
+
+        [Tooltip("If enabled, previous session logs will be cleared on startup.")]
+        public bool clearOnStartup = true;
 
         public string timestampFormat = "HH:mm:ss";   // default format
         public string messagePrefix = "";             // optional prefix

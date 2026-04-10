@@ -1,7 +1,8 @@
+using EldritchGames.EldritchLogger.Core;
 using System;
 using System.Collections.Generic;
 
-namespace EldritchGames.EldritchLogger
+namespace EldritchGames.EldritchLogger.Domain
 {
     public class LogEntry
     {

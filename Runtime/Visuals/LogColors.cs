@@ -1,5 +1,6 @@
 using UnityEngine;
 using EldritchGames.EldritchLogger.Settings;
+using EldritchGames.EldritchLogger.Core;
 
 namespace EldritchGames.EldritchLogger.Visuals
 {
