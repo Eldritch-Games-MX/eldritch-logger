@@ -54,6 +54,10 @@ namespace EldritchGames.EldritchLogger.UI
             // Ensure lists are initialized
             settings.enabledCategories ??= new List<LogCategory>();
             settings.categoryColors ??= new List<CategoryColor>();
+            if (settings.enabledCategories == null)
+                settings.enabledCategories = new List<LogCategory>();
+            if (settings.categoryColors == null)
+                settings.categoryColors = new List<CategoryColor>();
 
             // Make sure every category has a color entry
             foreach (LogCategory cat in Enum.GetValues(typeof(LogCategory)))
