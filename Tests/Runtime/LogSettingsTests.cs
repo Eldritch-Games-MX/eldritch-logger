@@ -1,4 +1,4 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Settings;
 using NUnit.Framework;
 using System;

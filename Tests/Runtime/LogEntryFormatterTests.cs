@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Dto;
+using EldritchGames.EldritchLogger.Core;
 
 namespace EldritchGames.EldritchLogger.Tests
 {

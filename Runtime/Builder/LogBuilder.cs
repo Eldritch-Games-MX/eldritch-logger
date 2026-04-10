@@ -1,5 +1,8 @@
+using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.Domain;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Builder
@@ -37,6 +40,7 @@ namespace EldritchGames.EldritchLogger.Builder
             this.gameObject = gameObject;
             this.eventName = eventName;
         }
+
         public ILogBuilder Category(LogCategory category) =>
             new LogBuilder(logger, level, category, new Dictionary<string, object>(metadata), exception, evt, gameObject, eventName);
 
@@ -48,7 +52,7 @@ namespace EldritchGames.EldritchLogger.Builder
 
         public ILogBuilder WithException(Exception ex) =>
             new LogBuilder(logger, level, category, new Dictionary<string, object>(metadata), ex, evt, gameObject, eventName);
-        
+
         public ILogBuilder WithEvent(object eventObj, string eventName)
         {
             var loggedEvent = new LoggedEvent(eventName, eventObj);
@@ -66,7 +70,8 @@ namespace EldritchGames.EldritchLogger.Builder
             };
             return new LogBuilder(logger, level, category, newMetadata, exception, evt, component.gameObject, eventName);
         }
-        public void Log(string message)
+
+        public async Task Log(string message)
         {
             var dict = new Dictionary<string, object>(metadata);
 
@@ -78,7 +83,10 @@ namespace EldritchGames.EldritchLogger.Builder
             if (gameObject != null && !dict.ContainsKey("GameObject"))
                 dict["GameObject"] = gameObject.name;
 
-            logger.Log(level, category, message, dict, exception);
+            dict["Scene"] = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            dict["BuildVersion"] = Application.version;
+
+            await logger.Log(level, category, message, dict, exception);
         }
     }
 }

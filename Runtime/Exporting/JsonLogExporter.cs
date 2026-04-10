@@ -1,48 +1,54 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Exporting;
 using System;
 using System.IO;
-using Unity.Plastic.Newtonsoft.Json;
+using System.Threading.Tasks;
 
 namespace EldritchGames.EldritchLogger.Exporting
 {
-    public class JsonLogExporter : ILogExporter, IDisposable
+    public class JsonLogExporter : IAsyncLogExporter, IDisposable
     {
-        private const string RootOpenBracket = "[";
-        private const string RootCloseBracket = "]";
-        private bool initialized = false;
+        public string TargetPath { get; }
+        public SinkCategory Category => SinkCategory.Persistent;
+        private readonly ILogFileWriter fileWriter;
         private bool firstEntry = true;
-        private StreamWriter writer;
 
-        public void Export(LogEntryDto dto, string path)
+        public JsonLogExporter(string path, ILogFileWriter fileWriter)
         {
-            if (!initialized)
+            TargetPath = path ?? throw new ArgumentNullException(nameof(path));
+            this.fileWriter = fileWriter ?? throw new ArgumentNullException(nameof(fileWriter));
+            var dir = Path.GetDirectoryName(path);
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+        }
+
+        public void OnLogReceived(LogEntryDto entry) => Export(entry, TargetPath).GetAwaiter().GetResult();
+
+        public async Task Export(LogEntryDto dto, string path)
+        {
+            await Task.Run(() =>
             {
-                writer = new StreamWriter(path, append: false);
-                writer.WriteLine(RootOpenBracket);
-                initialized = true;
-            }
+                if (firstEntry)
+                {
+                    fileWriter.WriteLine(path, "[", append: false);
+                    firstEntry = false;
+                }
+                else
+                {
+                    fileWriter.WriteLine(path, ",");
+                }
 
-            if (!firstEntry)
-                writer.WriteLine(",");
-
-            string json = JsonConvert.SerializeObject(dto, Formatting.Indented);
-            writer.Write(json);
-
-            firstEntry = false;
-            writer.Flush();
+                string json = Unity.Plastic.Newtonsoft.Json.JsonConvert.SerializeObject(dto, Unity.Plastic.Newtonsoft.Json.Formatting.Indented);
+                fileWriter.WriteLine(path, json);
+            });
         }
 
         public void Dispose()
         {
-            if (initialized)
-            {
-                writer.WriteLine();
-                writer.WriteLine(RootCloseBracket);
-                writer.Dispose();
-                initialized = false;
-            }
+            fileWriter.WriteLine(TargetPath, Environment.NewLine + "]");
+            if (fileWriter is IDisposable disposable)
+                disposable.Dispose();
         }
     }
-
 }

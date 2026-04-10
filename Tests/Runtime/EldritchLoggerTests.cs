@@ -1,4 +1,4 @@
-using EldritchGames.EldritchLogger;
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Settings;
@@ -6,27 +6,31 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
-    // Stub exporters with names matching the real ones
-    public class JsonLogExporterStub : ILogExporter
+    // Stub sinks with names matching the real ones
+    public class JsonLogSinkStub : ILogSink
     {
-        public List<(object dto, string path)> Calls = new();
-        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
+        public List<LogEntryDto> Calls = new();
+        public SinkCategory Category => SinkCategory.Persistent;
+        public void OnLogReceived(LogEntryDto dto) => Calls.Add(dto);
     }
 
-    public class XmlLogExporterStub : ILogExporter
+    public class XmlLogSinkStub : ILogSink
     {
-        public List<(object dto, string path)> Calls = new();
-        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
+        public List<LogEntryDto> Calls = new();
+        public SinkCategory Category => SinkCategory.Persistent;
+        public void OnLogReceived(LogEntryDto dto) => Calls.Add(dto);
     }
 
-    public class TextLogExporterStub : ILogExporter
+    public class TextLogSinkStub : ILogSink
     {
-        public List<(object dto, string path)> Calls = new();
-        public void Export(LogEntryDto dto, string path) => Calls.Add((dto, path));
+        public List<LogEntryDto> Calls = new();
+        public SinkCategory Category => SinkCategory.Persistent;
+        public void OnLogReceived(LogEntryDto dto) => Calls.Add(dto);
     }
 
     [TestFixture]
@@ -43,70 +47,65 @@ namespace EldritchGames.EldritchLogger.Tests
             return settings;
         }
 
-        private void InjectStubExporters(EldritchLogger logger, params ILogExporter[] stubs)
-        {
-            var exportersField = typeof(EldritchLogger)
-                .GetField("exporters", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            exportersField.SetValue(logger, stubs.ToList());
-        }
-
         [Test]
-        public void Constructor_ShouldInitializeExporters()
+        public void Constructor_ShouldInitializeSinks()
         {
             var settings = CreateSettings(ExportFormat.Json, ExportFormat.Xml);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
-            Assert.That(logger.Exporters.Count(), Is.EqualTo(2));
-            Assert.That(EldritchLogger.Instance, Is.SameAs(logger));
+            // Json + Xml + UnityConsole
+            Assert.That(logger.Sinks.Count(), Is.EqualTo(3));
+            Assert.That(Core.EldritchLogger.Instance, Is.SameAs(logger));
         }
 
         [Test]
         public void Dispose_ShouldClearInstance()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            var logger = new EldritchLogger(settings);
+            var logger = new Core.EldritchLogger(settings);
 
             logger.Dispose();
 
-            Assert.That(EldritchLogger.Instance, Is.Null);
+            Assert.That(Core.EldritchLogger.Instance, Is.Null);
         }
 
         [Test]
-        public void Log_ShouldCallStubExporter()
+        public async Task Log_ShouldCallStubSink()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
-            var stub = new JsonLogExporterStub();
-            InjectStubExporters(logger, stub);
+            var stub = new JsonLogSinkStub();
+            logger.AddSink(SinkCategory.Persistent, stub);
 
-            logger.Log(LogLevel.Info, LogCategory.General, "Test message");
+            await logger.Log(LogLevel.Info, LogCategory.General, "Test message");
 
             Assert.That(stub.Calls.Count, Is.EqualTo(1));
-            Assert.That(stub.Calls[0].path, Does.Contain("session.json"));
+            Assert.That(stub.Calls[0].Message, Is.EqualTo("Test message"));
         }
 
         [Test]
-        public void Log_ShouldRespectLogLevel()
+        public async Task Log_ShouldRespectLogLevel()
         {
             var settings = CreateSettings(ExportFormat.Json);
             settings.logLevel = LogLevel.Warning;
 
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
-            var stub = new JsonLogExporterStub();
-            InjectStubExporters(logger, stub);
+            var stub = new JsonLogSinkStub();
+            logger.AddSink(SinkCategory.Persistent, stub);
 
-            logger.Log(LogLevel.Debug, LogCategory.General, "Should not log");
+            await logger.Log(LogLevel.Debug, LogCategory.General, "Should not log");
 
             Assert.That(stub.Calls.Count, Is.EqualTo(0));
         }
+
 
         [Test]
         public void AtDebug_ShouldReturnLogBuilder()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
             var builder = logger.AtDebug(LogCategory.General);
 
@@ -118,7 +117,7 @@ namespace EldritchGames.EldritchLogger.Tests
         public void AtInfo_ShouldReturnLogBuilder()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
             var builder = logger.AtInfo(LogCategory.General);
 
@@ -129,7 +128,7 @@ namespace EldritchGames.EldritchLogger.Tests
         public void AtWarning_ShouldReturnLogBuilder()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
             var builder = logger.AtWarning(LogCategory.General);
 
@@ -140,7 +139,7 @@ namespace EldritchGames.EldritchLogger.Tests
         public void AtError_ShouldReturnLogBuilder()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
             var builder = logger.AtError(LogCategory.General);
 
@@ -151,7 +150,7 @@ namespace EldritchGames.EldritchLogger.Tests
         public void AtCritical_ShouldReturnLogBuilder()
         {
             var settings = CreateSettings(ExportFormat.Json);
-            using var logger = new EldritchLogger(settings);
+            using var logger = new Core.EldritchLogger(settings);
 
             var builder = logger.AtCritical(LogCategory.General);
 

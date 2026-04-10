@@ -1,3 +1,5 @@
+using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.Visuals;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,6 +22,9 @@ namespace EldritchGames.EldritchLogger.Settings
             LogCategory.Input,
         };
 
+        [Tooltip("If enabled, previous session logs will be cleared on startup.")]
+        public bool clearOnStartup = true;
+
         public string timestampFormat = "HH:mm:ss";   // default format
         public string messagePrefix = "";             // optional prefix
 
@@ -39,6 +44,26 @@ namespace EldritchGames.EldritchLogger.Settings
         [Header("Exception Filtering")]
         [Tooltip("Remove EldritchLogger internal frames from exception stack traces.")]
         public bool filterLoggerFrames = true;
+
+        [Header("Category Colors")]
+        public List<CategoryColor> categoryColors = new List<CategoryColor>
+        {
+            new CategoryColor(LogCategory.General, Color.white),
+            new CategoryColor(LogCategory.Gameplay, Color.green),
+            new CategoryColor(LogCategory.UI, Color.blue),
+            new CategoryColor(LogCategory.Audio, Color.yellow),
+            new CategoryColor(LogCategory.Network, Color.magenta),
+            new CategoryColor(LogCategory.AI, Color.cyan),
+            new CategoryColor(LogCategory.Physics, new Color(1f, 0.5f, 0f)),
+            new CategoryColor(LogCategory.Animation, new Color(0.5f, 0f, 0.5f)),
+            new CategoryColor(LogCategory.Input, new Color(0f, 0.5f, 0f))
+        };
+
+        public Color GetCategoryColor(LogCategory category)
+        {
+            var entry = categoryColors.Find(c => c.category == category);
+            return entry != null ? entry.color : Color.white;
+        }
 
         public bool IsCategoryEnabled(LogCategory category) => enabledCategories.Contains(category);
 

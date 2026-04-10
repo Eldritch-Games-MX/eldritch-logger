@@ -1,6 +1,6 @@
 using System;
 
-namespace EldritchGames.EldritchLogger
+namespace EldritchGames.EldritchLogger.Domain
 {
     /// <summary>
     /// Wraps an event object with its declared name for logging purposes.

@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Visuals;
@@ -23,7 +24,7 @@ namespace EldritchGames.EldritchLogger.Format
             // Parse back to enum once, guaranteed to succeed because mapper used ToString()
             var categoryEnum = Enum.Parse<LogCategory>(dto.Category);
 
-            string categoryColor = LogColors.GetColorString(categoryEnum);
+            string categoryColor = LogColors.GetColorString(categoryEnum, settings);
             string categoryText = $"<color={categoryColor}>{dto.Category}</color>";
 
             string baseMessage = $"[{dto.Timestamp.ToString(format)}] [{dto.Level}] {categoryText} {prefix}{dto.Message} {FormatMetadata(dto)}";

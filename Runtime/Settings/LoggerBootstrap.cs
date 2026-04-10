@@ -1,35 +1,30 @@
-using EldritchGames.EldritchLogger;
-using EldritchGames.EldritchLogger.Exporting;
-using EldritchGames.EldritchLogger.Settings;
 using System;
 using UnityEngine;
 
-public static class LoggerBootstrap
+namespace EldritchGames.EldritchLogger.Settings
 {
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Init()
+    public static class LoggerBootstrap
     {
-        var settings = Resources.Load<LogSettings>("LogSettings");
-        if (settings == null)
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Init()
         {
-            Debug.LogError("LogSettings asset not found in Resources!");
-            return;
-        }
-
-        new EldritchLogger(settings);
-
-        Application.quitting += () =>
-        {
-            if (EldritchLogger.Instance != null)
+            var settings = Resources.Load<LogSettings>("LogSettings");
+            if (settings == null)
             {
-                foreach (var exporter in EldritchLogger.Instance.Exporters)
-                {
-                    if (exporter is IDisposable disposable)
-                        disposable.Dispose();
-                }
+                Debug.LogError("LogSettings asset not found in Resources!");
+                return;
             }
-        };
 
-        Debug.Log("EldritchLogger initialized with settings: " + settings.name);
+            // Initialize logger
+            var logger = new Core.EldritchLogger(settings);
+
+            // Ensure proper cleanup on application quit
+            Application.quitting += () =>
+            {
+                logger.Dispose();
+            };
+
+            Debug.Log("EldritchLogger initialized with settings: " + settings.name);
+        }
     }
 }

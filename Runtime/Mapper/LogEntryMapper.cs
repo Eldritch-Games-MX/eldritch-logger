@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Domain;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Settings;
 using System;

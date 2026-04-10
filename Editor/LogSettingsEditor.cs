@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Format;
 using EldritchGames.EldritchLogger.Settings;
@@ -48,15 +49,51 @@ namespace EldritchGames.EldritchLogger.UI
 
         private void DrawCategorySection(LogSettings settings)
         {
-            EditorGUILayout.LabelField(new GUIContent("Enabled Categories", "Select which categories will produce logs."), EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent("Categories", "Enable/disable categories and customize their colors."), EditorStyles.boldLabel);
 
+            // Ensure lists are initialized
+            settings.enabledCategories ??= new List<LogCategory>();
+            settings.categoryColors ??= new List<CategoryColor>();
+
+            // Make sure every category has a color entry
+            foreach (LogCategory cat in Enum.GetValues(typeof(LogCategory)))
+            {
+                if (!settings.categoryColors.Exists(c => c.category == cat))
+                    settings.categoryColors.Add(new CategoryColor(cat, Color.white));
+            }
+
+            // Draw each category row
+            foreach (var entry in settings.categoryColors)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                // Toggle for enabling/disabling category
+                bool enabled = settings.enabledCategories.Contains(entry.category);
+                bool newEnabled = EditorGUILayout.ToggleLeft(entry.category.ToString(), enabled, GUILayout.Width(150));
+                if (newEnabled && !enabled)
+                    settings.enabledCategories.Add(entry.category);
+                else if (!newEnabled && enabled)
+                    settings.enabledCategories.Remove(entry.category);
+
+                // Color picker
+                entry.color = EditorGUILayout.ColorField(entry.color);
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.Space();
+
+            // Bulk actions
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(new GUIContent("Enable All", "Enable logging for all categories.")))
                 settings.EnableAllCategories();
             if (GUILayout.Button(new GUIContent("Disable All", "Disable logging for all categories.")))
                 settings.DisableAllCategories();
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space();
         }
+
 
         private void DrawLogLevel(LogSettings settings)
         {
@@ -121,7 +158,7 @@ namespace EldritchGames.EldritchLogger.UI
             var formatter = new LogEntryFormatter(settings);
             string preview = formatter.Format(sampleDto);
 
-            GUIStyle richTextStyle = new GUIStyle(EditorStyles.label)
+            GUIStyle richTextStyle = new(EditorStyles.label)
             {
                 richText = true,
                 wordWrap = true
@@ -143,8 +180,7 @@ namespace EldritchGames.EldritchLogger.UI
                 EditorGUILayout.LabelField("Formats", EditorStyles.boldLabel);
 
                 // Ensure list is initialized
-                if (settings.exportFormats == null)
-                    settings.exportFormats = new List<ExportFormat>();
+                settings.exportFormats ??= new List<ExportFormat>();
 
                 DrawFormatToggle(settings, ExportFormat.Json, "JSON");
                 DrawFormatToggle(settings, ExportFormat.Xml, "XML");
@@ -157,6 +193,10 @@ namespace EldritchGames.EldritchLogger.UI
                 settings.exportDirectory = EditorGUILayout.TextField(
                     new GUIContent("Directory", "Target directory for exported logs. Leave empty to use Application.persistentDataPath."),
                     settings.exportDirectory);
+
+                settings.clearOnStartup = EditorGUILayout.Toggle(
+                    new GUIContent("Clear On Startup", "If enabled, previous session logs will be deleted when the logger initializes."),
+                    settings.clearOnStartup);
 
                 EditorGUILayout.HelpBox(
                     "If directory is empty, logs will be written to Application.persistentDataPath.",
@@ -178,7 +218,7 @@ namespace EldritchGames.EldritchLogger.UI
 
 
         public static LogEntryDto SampleDto(LogSettings settings) =>
-            new LogEntryDto
+            new()
             {
                 Timestamp = DateTime.Now,
                 Level = settings.logLevel.ToString(),
