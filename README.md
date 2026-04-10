@@ -33,7 +33,7 @@ Unity will fetch the package directly from GitHub.
 3. Configure in the inspector:
 	- Minimum log level
 	- Enabled categories
-	- Export formats (JSON, XML, Text
+	- Export formats (JSON, XML, Text)
 	- Export directory and file name
 	- Console options (color coding, stack trace suppression)
 
