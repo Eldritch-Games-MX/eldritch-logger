@@ -80,7 +80,10 @@ namespace EldritchGames.EldritchLogger.UI
                     settings.enabledCategories.Remove(entry.category);
 
                 // Color picker
-                entry.color = EditorGUILayout.ColorField(entry.color);
+                if (settings.useCategoryColors)
+                {
+                    entry.color = EditorGUILayout.ColorField(entry.color);
+                }
 
                 EditorGUILayout.EndHorizontal();
             }
@@ -143,6 +146,13 @@ namespace EldritchGames.EldritchLogger.UI
                 settings.useContextObjects = EditorGUILayout.Toggle(
                     new GUIContent("Use Context Objects", "Attach Unity GameObject/Component context to logs."),
                     settings.useContextObjects);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Category Colors", EditorStyles.boldLabel);
+
+                settings.useCategoryColors = EditorGUILayout.Toggle(
+                    new GUIContent("Use Category Colors", "Enable per-category color customization in the inspector."),
+                    settings.useCategoryColors);
 
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Exception Filtering", EditorStyles.boldLabel);

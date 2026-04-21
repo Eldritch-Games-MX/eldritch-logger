@@ -46,6 +46,7 @@ namespace EldritchGames.EldritchLogger.Settings
         public bool filterLoggerFrames = true;
 
         [Header("Category Colors")]
+        public bool useCategoryColors = true;
         public List<CategoryColor> categoryColors = new List<CategoryColor>
         {
             new CategoryColor(LogCategory.General, Color.white),
