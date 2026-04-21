@@ -25,7 +25,12 @@ namespace EldritchGames.EldritchLogger.Format
             var categoryEnum = Enum.Parse<LogCategory>(dto.Category);
 
             string categoryColor = LogColors.GetColorString(categoryEnum, settings);
-            string categoryText = $"<color={categoryColor}>{dto.Category}</color>";
+            string categoryText;
+
+            if (settings.useCategoryColors)
+                categoryText = $"<color={categoryColor}>{dto.Category}</color>";
+            else
+                categoryText = dto.Category;
 
             string baseMessage = $"[{dto.Timestamp.ToString(format)}] [{dto.Level}] {categoryText} {prefix}{dto.Message} {FormatMetadata(dto)}";
 

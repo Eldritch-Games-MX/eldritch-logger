@@ -105,5 +105,46 @@ namespace EldritchGames.EldritchLogger.Tests
             StringAssert.Contains("InvalidOperationException", output);
             StringAssert.Contains("Boom!", output);
         }
+
+        [Test]
+        public void Format_CategoryColorRespectsToggle_Disabled()
+        {
+            settings.useCategoryColors = false;
+
+            var dto = new LogEntryDto
+            {
+                Timestamp = DateTime.Now,
+                Level = LogLevel.Info.ToString(),
+                Category = LogCategory.Gameplay.ToString(),
+                Message = "Gameplay message"
+            };
+
+            string output = formatter.Format(dto);
+
+            // Should contain the category name but no color markup
+            StringAssert.Contains("Gameplay", output);
+            StringAssert.DoesNotContain("<color=", output);
+        }
+
+        [Test]
+        public void Format_CategoryColorRespectsToggle_Enabled()
+        {
+            settings.useCategoryColors = true;
+
+            var dto = new LogEntryDto
+            {
+                Timestamp = DateTime.Now,
+                Level = LogLevel.Info.ToString(),
+                Category = LogCategory.Gameplay.ToString(),
+                Message = "Gameplay message"
+            };
+
+            string output = formatter.Format(dto);
+
+            // Should wrap the category name in color tags
+            StringAssert.Contains("<color=", output);
+            StringAssert.Contains("Gameplay</color>", output);
+        }
+
     }
 }
