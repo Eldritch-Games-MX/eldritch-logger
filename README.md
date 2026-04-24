@@ -42,28 +42,41 @@ It also disposes exporters cleanly when the application quits.
 
 ## Usage
 
+Add this using directive to any script that calls the logger:
+```csharp
+using EldritchGames.EldritchLogger.Core;
+```
+
 ### Direct Logging
 ```csharp
-EldritchLogger.Instance.Log(LogLevel.Info, LogCategory.UI, "Button clicked");
-EldritchLogger.Instance.Log(LogLevel.Error, LogCategory.Network, "Connection lost");
+ELogger.Log(LogLevel.Info, LogCategory.UI, "Button clicked");
+ELogger.Log(LogLevel.Error, LogCategory.Network, "Connection lost");
 ```
+
 ### Fluent Builder
 ```csharp
-EldritchLogger.Instance.AtInfo(LogCategory.Gameplay)
+ELogger.AtInfo(LogCategory.Gameplay)
     .AddKeyValue("ItemId", 42)
     .Log("Player picked up potion");
 
-EldritchLogger.Instance.AtError(LogCategory.AI)
+ELogger.AtError(LogCategory.AI)
     .WithException(new InvalidOperationException("Boom!"))
     .Log("AI failed to pathfind");
 
-EldritchLogger.Instance.AtWarning(LogCategory.Network)
+ELogger.AtWarning(LogCategory.Network)
     .WithEvent(OnPlayerDeath, nameof(OnPlayerDeath))
     .Log("Player lost connection");
 
-EldritchLogger.Instance.AtInfo(LogCategory.Gameplay)
+ELogger.AtInfo(LogCategory.Gameplay)
     .WithComponent(this)
     .Log("Contextual log with MonoBehaviour");
+```
+
+### Advanced: Direct Instance Access
+`ELogger` is a static facade over `EldritchLogger.Instance`. For dependency injection or test scenarios where you need the instance directly:
+```csharp
+// Inject via constructor or field
+IEldritchLogger logger = EldritchLogger.Instance;
 ```
 
 ###  Eldritch Logger - Fluent Builder Quick Reference
