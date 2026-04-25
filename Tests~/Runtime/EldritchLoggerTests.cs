@@ -4,7 +4,6 @@ using EldritchGames.EldritchLogger.Settings;
 using Moq;
 using NUnit.Framework;
 using System.Linq;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
@@ -31,18 +30,6 @@ namespace EldritchGames.EldritchLogger.Tests
 
             // Json + Xml + UnityConsole
             Assert.That(logger.Sinks.Count(), Is.EqualTo(3));
-            Assert.That(Core.EldritchLogger.Instance, Is.SameAs(logger));
-        }
-
-        [Test]
-        public void Dispose_ShouldClearInstance()
-        {
-            var settings = CreateSettings(ExportFormat.Json);
-            var logger = new Core.EldritchLogger(settings);
-
-            logger.Dispose();
-
-            Assert.That(Core.EldritchLogger.Instance, Is.Null);
         }
 
         [Test]
@@ -63,9 +50,7 @@ namespace EldritchGames.EldritchLogger.Tests
             var settings = CreateSettings(ExportFormat.Json);
             using var logger = new Core.EldritchLogger(settings);
 
-            var builder = logger.AtInfo(LogCategory.General);
-
-            Assert.That(builder, Is.Not.Null);
+            Assert.That(logger.AtInfo(LogCategory.General), Is.Not.Null);
         }
 
         [Test]
@@ -74,9 +59,7 @@ namespace EldritchGames.EldritchLogger.Tests
             var settings = CreateSettings(ExportFormat.Json);
             using var logger = new Core.EldritchLogger(settings);
 
-            var builder = logger.AtWarning(LogCategory.General);
-
-            Assert.That(builder, Is.Not.Null);
+            Assert.That(logger.AtWarning(LogCategory.General), Is.Not.Null);
         }
 
         [Test]
@@ -85,9 +68,7 @@ namespace EldritchGames.EldritchLogger.Tests
             var settings = CreateSettings(ExportFormat.Json);
             using var logger = new Core.EldritchLogger(settings);
 
-            var builder = logger.AtError(LogCategory.General);
-
-            Assert.That(builder, Is.Not.Null);
+            Assert.That(logger.AtError(LogCategory.General), Is.Not.Null);
         }
 
         [Test]
@@ -96,19 +77,16 @@ namespace EldritchGames.EldritchLogger.Tests
             var settings = CreateSettings(ExportFormat.Json);
             using var logger = new Core.EldritchLogger(settings);
 
-            var builder = logger.AtCritical(LogCategory.General);
-
-            Assert.That(builder, Is.Not.Null);
+            Assert.That(logger.AtCritical(LogCategory.General), Is.Not.Null);
         }
 
         [Test]
-        public async Task LogBuilder_ShouldCallUnderlyingLoggerAsync()
+        public void LogBuilder_ShouldCallUnderlyingLogger()
         {
-            var settings = CreateSettings(ExportFormat.Json);
             var mockLogger = new Mock<IEldritchLogger>();
 
             var builder = new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General);
-            await builder.Log("Test message");
+            builder.Log("Test message");
 
             mockLogger.Verify(l => l.Log(
                 LogLevel.Info,

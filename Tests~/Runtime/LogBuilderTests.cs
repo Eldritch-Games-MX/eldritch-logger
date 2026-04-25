@@ -4,7 +4,6 @@ using Moq;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
@@ -24,7 +23,6 @@ namespace EldritchGames.EldritchLogger.Tests
         {
             mockLogger = new Mock<IEldritchLogger>();
 
-            // Capture arguments whenever Log is called
             mockLogger.Setup(l => l.Log(
                 It.IsAny<LogLevel>(),
                 It.IsAny<LogCategory>(),
@@ -39,14 +37,13 @@ namespace EldritchGames.EldritchLogger.Tests
                 capturedMessage = message;
                 capturedMetadata = metadata;
                 capturedException = exception;
-            })
-            .Returns(Task.CompletedTask);
+            });
         }
 
         [Test]
-        public async Task Category_SetsCategory()
+        public void Category_SetsCategory()
         {
-            await new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
+            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
                 .Category(LogCategory.UI)
                 .Log("Category test");
 
@@ -54,9 +51,9 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public async Task AddKeyValue_AddsMetadata()
+        public void AddKeyValue_AddsMetadata()
         {
-            await new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
+            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
                 .AddKeyValue("CustomKey", "CustomValue")
                 .Log("Info with metadata");
 
@@ -64,10 +61,10 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public async Task WithException_AttachesException()
+        public void WithException_AttachesException()
         {
             var ex = new InvalidOperationException("Boom!");
-            await new LogBuilder(mockLogger.Object, LogLevel.Error, LogCategory.General)
+            new LogBuilder(mockLogger.Object, LogLevel.Error, LogCategory.General)
                 .WithException(ex)
                 .Log("Error with exception");
 
@@ -75,12 +72,12 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public async Task WithComponent_AddsComponentContextAndGameObject()
+        public void WithComponent_AddsComponentContextAndGameObject()
         {
             var go = new GameObject("TestObject");
             var component = go.AddComponent<BoxCollider>();
 
-            await new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
+            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
                 .WithComponent(component)
                 .Log("Info with component");
 

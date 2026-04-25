@@ -10,7 +10,7 @@ namespace EldritchGames.EldritchLogger.Exporting
 
         public LogPathResolver(LogSettings settings)
         {
-            this.settings = settings ?? throw new System.ArgumentNullException(nameof(settings));
+            this.settings = settings != null ? settings : throw new System.ArgumentNullException(nameof(settings));
         }
 
         public string ResolvePath(ExportFormat fmt)

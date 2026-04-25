@@ -16,7 +16,7 @@ namespace EldritchGames.EldritchLogger.Exporting
 
         public UnityConsoleExporter(LogSettings settings)
         {
-            this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            this.settings = settings != null ? settings : throw new ArgumentNullException(nameof(settings));
             formatter = new LogEntryFormatter(settings);
         }
 

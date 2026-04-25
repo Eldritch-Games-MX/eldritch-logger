@@ -1,7 +1,6 @@
 using EldritchGames.EldritchLogger.Core;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Builder
@@ -19,9 +18,9 @@ namespace EldritchGames.EldritchLogger.Builder
         ILogBuilder WithComponent(Component component);
 
         /// <summary>
-        /// Finalizes and dispatches the log entry asynchronously with the given message.
-        /// Callers should await this method.
+        /// Finalizes and dispatches the log entry with the given message.
+        /// File exporters run asynchronously in the background; this call returns immediately.
         /// </summary>
-        Task Log(string message);
+        void Log(string message);
     }
 }

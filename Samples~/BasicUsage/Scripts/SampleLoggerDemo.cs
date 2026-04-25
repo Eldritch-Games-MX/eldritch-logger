@@ -3,60 +3,65 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using EldritchGames.EldritchLogger.Core;
-using EldritchGames.EldritchLogger.Settings;
 
+// Pattern A — per-class named logger initialized in Awake (recommended for MonoBehaviours).
+// Do NOT use a field initializer: Unity can run MonoBehaviour constructors during
+// edit-mode deserialization, before LoggerBootstrap has registered the factory.
 public class SampleLoggerDemo : MonoBehaviour
 {
+    private IEldritchLogger _logger;
+
     event Action OnPlayerDeath = () => { /* Player death logic */ };
+
+    void Awake()
+    {
+        _logger = ELoggerFactory.GetLogger<SampleLoggerDemo>();
+    }
 
     void Start()
     {
+        Debug.Log("Starting SampleLoggerDemo...");
         // --- Direct logging ---
-        ELogger.Log(LogLevel.Info, LogCategory.Gameplay,
+        _logger.Log(LogLevel.Info, LogCategory.Gameplay,
             $"{SampleLogConstants.PLAYER} picked up {SampleLogConstants.ITEM_POTION}",
             new Dictionary<string, object> { { SampleLogConstants.ITEM_ID, 42 } });
 
-        ELogger.Log(LogLevel.Warning, LogCategory.Network,
+        _logger.Log(LogLevel.Warning, LogCategory.Network,
             $"{SampleLogConstants.PLAYER} lost connection to server");
 
-        ELogger.Log(LogLevel.Error, LogCategory.AI,
+        _logger.Log(LogLevel.Error, LogCategory.AI,
             $"{SampleLogConstants.ITEM_POTION} failed to pathfind");
 
-        ELogger.Log(LogLevel.Critical, LogCategory.Gameplay,
+        _logger.Log(LogLevel.Critical, LogCategory.Gameplay,
             "Critical gameplay failure!");
 
         // --- Fluent builder ---
-        ELogger.AtDebug(LogCategory.General)
+        _logger.AtDebug(LogCategory.General)
             .AddKeyValue("InitStep", 1)
             .Log("Debugging startup sequence");
 
-        ELogger.AtInfo(LogCategory.Gameplay)
+        _logger.AtInfo(LogCategory.Gameplay)
             .AddKeyValue(SampleLogConstants.ITEM_ID, 42)
             .WithComponent(this)
             .Log($"{SampleLogConstants.PLAYER} picked up {SampleLogConstants.ITEM_POTION}");
 
-        ELogger.AtWarning(LogCategory.Network)
+        _logger.AtWarning(LogCategory.Network)
             .WithEvent(OnPlayerDeath, nameof(OnPlayerDeath))
             .Log($"{SampleLogConstants.PLAYER} lost connection to server");
 
-        ELogger.AtError(LogCategory.AI)
+        _logger.AtError(LogCategory.AI)
             .AddKeyValue("AI_STATE", "PathfindingFailed")
             .WithException(new InvalidOperationException("Boom!"))
             .Log($"{SampleLogConstants.ITEM_POTION} failed to pathfind");
 
-        ELogger.AtCritical(LogCategory.Gameplay)
+        _logger.AtCritical(LogCategory.Gameplay)
             .AddKeyValue(SampleLogConstants.PLAYER, 99)
             .Log("Critical gameplay failure!");
 
         // --- Contextual logging with GameObject ---
-        var go = new GameObject("Player");
-        ELogger.AtInfo(LogCategory.Gameplay)
+        _logger.AtInfo(LogCategory.Gameplay)
             .WithComponent(this)
             .Log("Contextual log with GameObject");
-
-        // --- Active sinks ---
-        foreach (var sink in EldritchLogger.Instance.Sinks)
-            Debug.Log($"Sink active: {sink.GetType().Name}");
 
         // --- Coroutine showcase ---
         StartCoroutine(LogOverTime());
@@ -66,14 +71,31 @@ public class SampleLoggerDemo : MonoBehaviour
     {
         for (int i = 1; i <= 3; i++)
         {
-            ELogger.AtInfo(LogCategory.Gameplay)
+            _logger.AtInfo(LogCategory.Gameplay)
                 .AddKeyValue("Tick", i)
                 .Log($"Coroutine tick {i}");
 
             yield return new WaitForSeconds(1f);
         }
 
-        ELogger.AtInfo(LogCategory.General)
+        _logger.AtInfo(LogCategory.General)
             .Log("Coroutine finished logging sequence");
+    }
+}
+
+// Pattern B — constructor injection for pure C# classes (recommended outside MonoBehaviour).
+// The DI container (or test setup) provides the IEldritchLogger instance explicitly.
+public class SampleGameService
+{
+    private readonly IEldritchLogger _logger;
+
+    public SampleGameService(IEldritchLogger logger)
+    {
+        _logger = logger;
+    }
+
+    public void DoWork()
+    {
+        _logger.AtInfo(LogCategory.Gameplay).Log("SampleGameService doing work");
     }
 }

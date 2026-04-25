@@ -1,22 +1,20 @@
 using EldritchGames.EldritchLogger.Builder;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Core
 {
     /// <summary>
     /// Defines the contract for the Eldritch logging API.
-    /// Provides an asynchronous <c>Log()</c> method and fluent builder entry points for common log levels.
+    /// Provides a <c>Log()</c> method and fluent builder entry points for common log levels.
     /// </summary>
     public interface IEldritchLogger
     {
         /// <summary>
-        /// Logs a message asynchronously with the specified level and category.
-        /// Callers should await this method to ensure logs are flushed.
+        /// Logs a message with the specified level and category.
+        /// File exporters run asynchronously in the background; this call returns immediately.
         /// </summary>
-        Task Log(LogLevel level, LogCategory category, string message,
+        void Log(LogLevel level, LogCategory category, string message,
                  Dictionary<string, object> metadata = null, Exception exception = null);
 
         /// <summary>
