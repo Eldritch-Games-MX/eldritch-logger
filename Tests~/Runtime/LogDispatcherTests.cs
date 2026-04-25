@@ -11,23 +11,47 @@ namespace EldritchGames.EldritchLogger.Tests
     public class LogDispatcherTests
     {
         [Test]
-        public async Task Dispatch_ShouldCallSyncAndAsyncSinks()
+        public void Dispatch_ShouldCallSyncSinkImmediately()
         {
-            // Arrange
             var syncSink = new Mock<ILogSink>();
+            var dispatcher = new LogDispatcher();
+            var dto = new LogEntryDto { Message = "Hello" };
+
+            dispatcher.Dispatch(dto, new ILogSink[] { syncSink.Object });
+
+            syncSink.Verify(s => s.OnLogReceived(It.Is<LogEntryDto>(d => d.Message == "Hello")), Times.Once);
+        }
+
+        [Test]
+        public void Dispatch_ShouldFireAndForgetAsyncSink()
+        {
             var asyncSink = new Mock<IAsyncLogExporter>();
+            asyncSink.Setup(s => s.Export(It.IsAny<LogEntryDto>(), It.IsAny<string>()))
+                     .Returns(Task.CompletedTask);
 
             var dispatcher = new LogDispatcher();
             var dto = new LogEntryDto { Message = "Hello" };
 
-            // Act
-            await dispatcher.Dispatch(dto, new ILogSink[] { syncSink.Object, asyncSink.Object });
+            dispatcher.Dispatch(dto, new ILogSink[] { asyncSink.Object });
 
-            // Assert
-            // Sync sinks should get OnLogReceived
+            // Task.CompletedTask is already done so ExportAsync runs synchronously in test context
+            asyncSink.Verify(s => s.Export(It.Is<LogEntryDto>(d => d.Message == "Hello"), It.IsAny<string>()), Times.Once);
+        }
+
+        [Test]
+        public void Dispatch_ShouldCallBothSyncAndAsyncSinks()
+        {
+            var syncSink  = new Mock<ILogSink>();
+            var asyncSink = new Mock<IAsyncLogExporter>();
+            asyncSink.Setup(s => s.Export(It.IsAny<LogEntryDto>(), It.IsAny<string>()))
+                     .Returns(Task.CompletedTask);
+
+            var dispatcher = new LogDispatcher();
+            var dto = new LogEntryDto { Message = "Hello" };
+
+            dispatcher.Dispatch(dto, new ILogSink[] { syncSink.Object, asyncSink.Object });
+
             syncSink.Verify(s => s.OnLogReceived(It.Is<LogEntryDto>(d => d.Message == "Hello")), Times.Once);
-
-            // Async sinks should get Export, not OnLogReceived
             asyncSink.Verify(s => s.Export(It.Is<LogEntryDto>(d => d.Message == "Hello"), It.IsAny<string>()), Times.Once);
         }
     }

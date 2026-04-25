@@ -2,7 +2,6 @@ using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Domain;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Builder
@@ -71,7 +70,7 @@ namespace EldritchGames.EldritchLogger.Builder
             return new LogBuilder(logger, level, category, newMetadata, exception, evt, component.gameObject, eventName);
         }
 
-        public async Task Log(string message)
+        public void Log(string message)
         {
             var dict = new Dictionary<string, object>(metadata);
 
@@ -86,7 +85,7 @@ namespace EldritchGames.EldritchLogger.Builder
             dict["Scene"] = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             dict["BuildVersion"] = Application.version;
 
-            await logger.Log(level, category, message, dict, exception);
+            logger.Log(level, category, message, dict, exception);
         }
     }
 }

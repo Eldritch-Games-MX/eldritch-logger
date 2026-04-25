@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Settings
@@ -15,13 +14,14 @@ namespace EldritchGames.EldritchLogger.Settings
                 return;
             }
 
-            // Initialize logger
-            var logger = new Core.EldritchLogger(settings);
+            var rootLogger    = new Core.EldritchLogger(settings);
+            var loggerFactory = new Core.EldritchLoggerFactory(rootLogger);
+            Core.ELoggerFactory.SetFactory(loggerFactory);
 
-            // Ensure proper cleanup on application quit
             Application.quitting += () =>
             {
-                logger.Dispose();
+                Core.ELoggerFactory.ClearFactory();
+                loggerFactory.Dispose();
             };
 
             Debug.Log("EldritchLogger initialized with settings: " + settings.name);

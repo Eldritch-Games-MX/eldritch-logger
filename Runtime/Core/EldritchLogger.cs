@@ -5,7 +5,6 @@ using EldritchGames.EldritchLogger.Mapper;
 using EldritchGames.EldritchLogger.Settings;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace EldritchGames.EldritchLogger.Core
 {
@@ -18,17 +17,13 @@ namespace EldritchGames.EldritchLogger.Core
         private readonly ILogDispatcher dispatcher;
         private readonly LogFileCleaner cleaner;
 
-        public static EldritchLogger Instance { get; private set; }
         public IEnumerable<ILogSink> Sinks => sinkManager.GetAllSinks();
 
-        // Default constructor
         public EldritchLogger(LogSettings settings)
             : this(settings, new LogSinkFactory(settings)) { }
 
-        // Overload for injecting a custom factory (used in tests)
-        public EldritchLogger(LogSettings settings, LogSinkFactory sinkFactory)
+        internal EldritchLogger(LogSettings settings, LogSinkFactory sinkFactory)
         {
-            Instance = this;
             this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
             mapper = new LogEntryMapper(settings);
@@ -41,15 +36,15 @@ namespace EldritchGames.EldritchLogger.Core
                 cleaner.DeletePreviousFiles();
         }
 
-        public async Task Log(LogLevel level, LogCategory category, string message,
-                              Dictionary<string, object> metadata = null, Exception exception = null)
+        public void Log(LogLevel level, LogCategory category, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null)
         {
             if (!ShouldLog(level, category)) return;
 
             var entry = entryFactory.Create(level, category, message, metadata, exception);
             var dto = mapper.ToDto(entry);
 
-            await dispatcher.Dispatch(dto, sinkManager.GetAllSinks());
+            dispatcher.Dispatch(dto, sinkManager.GetAllSinks());
         }
 
         public ILogBuilder AtDebug(LogCategory category = LogCategory.General) =>
@@ -68,7 +63,6 @@ namespace EldritchGames.EldritchLogger.Core
 
         public void Dispose()
         {
-            Instance = null;
             foreach (var sink in sinkManager.GetAllSinks())
                 if (sink is IDisposable disposable)
                     disposable.Dispose();
