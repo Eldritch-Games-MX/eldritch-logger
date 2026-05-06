@@ -21,10 +21,10 @@ namespace EldritchGames.EldritchLogger.Format
             string format = settings != null ? settings.timestampFormat : null ?? "HH:mm:ss";
             string prefix = settings != null ? settings.messagePrefix : null ?? "";
 
-            // Parse back to enum once, guaranteed to succeed because mapper used ToString()
-            var categoryEnum = Enum.Parse<LogCategory>(dto.Category);
+            string categoryColor = Enum.TryParse<LogCategory>(dto.Category, out var categoryEnum)
+                ? LogColors.GetColorString(categoryEnum, settings)
+                : LogColors.GetColorString(dto.Category, settings);
 
-            string categoryColor = LogColors.GetColorString(categoryEnum, settings);
             string categoryText;
 
             if (settings.useCategoryColors)

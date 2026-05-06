@@ -28,6 +28,14 @@ namespace EldritchGames.EldritchLogger.Core
                         Dictionary<string, object> metadata = null, Exception exception = null) { }
 
         /// <inheritdoc/>
+        public void Log(LogLevel level, string categoryName, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null) { }
+
+        /// <inheritdoc/>
+        public void Log(LogLevel level, Enum category, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null) { }
+
+        /// <inheritdoc/>
         public ILogBuilder AtDebug(LogCategory category = LogCategory.General)
             => NullLogBuilder.Instance;
 

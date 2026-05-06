@@ -18,6 +18,20 @@ namespace EldritchGames.EldritchLogger.Core
                  Dictionary<string, object> metadata = null, Exception exception = null);
 
         /// <summary>
+        /// Logs a message using a custom string category name.
+        /// Use this overload for user-defined categories added via the Settings UI.
+        /// </summary>
+        void Log(LogLevel level, string categoryName, string message,
+                 Dictionary<string, object> metadata = null, Exception exception = null);
+
+        /// <summary>
+        /// Logs a message using any user-defined enum as the category.
+        /// The enum value's name must match a custom category registered in LogSettings.
+        /// </summary>
+        void Log(LogLevel level, Enum category, string message,
+                 Dictionary<string, object> metadata = null, Exception exception = null);
+
+        /// <summary>
         /// Creates a fluent builder for a debug-level log entry.
         /// </summary>
         ILogBuilder AtDebug(LogCategory category = LogCategory.General);
