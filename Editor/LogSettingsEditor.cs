@@ -14,6 +14,8 @@ namespace EldritchGames.EldritchLogger.UI
     public class LogSettingsEditor : Editor
     {
         private bool showAdvanced = false;
+        private string _newCategoryName = "";
+        private string _addCategoryError = "";
 
         public override void OnInspectorGUI()
         {
@@ -54,24 +56,20 @@ namespace EldritchGames.EldritchLogger.UI
             // Ensure lists are initialized
             settings.enabledCategories ??= new List<LogCategory>();
             settings.categoryColors ??= new List<CategoryColor>();
-            if (settings.enabledCategories == null)
-                settings.enabledCategories = new List<LogCategory>();
-            if (settings.categoryColors == null)
-                settings.categoryColors = new List<CategoryColor>();
+            settings.customCategories ??= new List<CustomCategoryEntry>();
 
-            // Make sure every category has a color entry
+            // Make sure every built-in category has a color entry
             foreach (LogCategory cat in Enum.GetValues(typeof(LogCategory)))
             {
                 if (!settings.categoryColors.Exists(c => c.category == cat))
                     settings.categoryColors.Add(new CategoryColor(cat, Color.white));
             }
 
-            // Draw each category row
+            // --- Built-in categories ---
             foreach (var entry in settings.categoryColors)
             {
                 EditorGUILayout.BeginHorizontal();
 
-                // Toggle for enabling/disabling category
                 bool enabled = settings.enabledCategories.Contains(entry.category);
                 bool newEnabled = EditorGUILayout.ToggleLeft(entry.category.ToString(), enabled, GUILayout.Width(150));
                 if (newEnabled && !enabled)
@@ -79,14 +77,61 @@ namespace EldritchGames.EldritchLogger.UI
                 else if (!newEnabled && enabled)
                     settings.enabledCategories.Remove(entry.category);
 
-                // Color picker
                 if (settings.useCategoryColors)
-                {
                     entry.color = EditorGUILayout.ColorField(entry.color);
-                }
 
                 EditorGUILayout.EndHorizontal();
             }
+
+            EditorGUILayout.Space();
+
+            // --- Custom categories ---
+            EditorGUILayout.LabelField("Custom Categories", EditorStyles.boldLabel);
+
+            var toRemove = new List<string>();
+            foreach (var entry in settings.customCategories)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                entry.enabled = EditorGUILayout.ToggleLeft(entry.name, entry.enabled, GUILayout.Width(150));
+
+                if (settings.useCategoryColors)
+                    entry.color = EditorGUILayout.ColorField(entry.color);
+
+                if (GUILayout.Button("✕", GUILayout.Width(24)))
+                    toRemove.Add(entry.name);
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            foreach (var name in toRemove)
+            {
+                settings.RemoveCustomCategory(name);
+                EditorUtility.SetDirty(settings);
+            }
+
+            // Add new custom category row
+            EditorGUILayout.BeginHorizontal();
+            _newCategoryName = EditorGUILayout.TextField(_newCategoryName);
+            if (GUILayout.Button("Add", GUILayout.Width(50)))
+            {
+                if (settings.AddCustomCategory(_newCategoryName.Trim(), Color.white))
+                {
+                    _newCategoryName = "";
+                    _addCategoryError = "";
+                    EditorUtility.SetDirty(settings);
+                }
+                else
+                {
+                    _addCategoryError = string.IsNullOrWhiteSpace(_newCategoryName)
+                        ? "Name cannot be empty."
+                        : $"\"{_newCategoryName.Trim()}\" already exists or conflicts with a built-in category.";
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (!string.IsNullOrEmpty(_addCategoryError))
+                EditorGUILayout.HelpBox(_addCategoryError, MessageType.Error);
 
             EditorGUILayout.Space();
 

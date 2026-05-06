@@ -1,10 +1,12 @@
 using EldritchGames.EldritchLogger.Builder;
 using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Exporting;
 using EldritchGames.EldritchLogger.Mapper;
 using EldritchGames.EldritchLogger.Settings;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace EldritchGames.EldritchLogger.Core
 {
@@ -47,6 +49,29 @@ namespace EldritchGames.EldritchLogger.Core
             dispatcher.Dispatch(dto, sinkManager.GetAllSinks());
         }
 
+        public void Log(LogLevel level, string categoryName, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null)
+        {
+            if (!ShouldLog(level, categoryName)) return;
+
+            var dto = new LogEntryDto
+            {
+                Timestamp = DateTime.Now,
+                Level = level.ToString(),
+                Category = categoryName,
+                Message = message,
+                Metadata = metadata?.Select(kv => new MetadataEntry { Key = kv.Key, Value = kv.Value?.ToString() }).ToList()
+                           ?? new List<MetadataEntry>(),
+                Exception = exception != null ? $"{exception.GetType().Name}: {exception.Message}" : null
+            };
+
+            dispatcher.Dispatch(dto, sinkManager.GetAllSinks());
+        }
+
+        public void Log(LogLevel level, Enum category, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null) =>
+            Log(level, category.ToString(), message, metadata, exception);
+
         public ILogBuilder AtDebug(LogCategory category = LogCategory.General) =>
             new LogBuilder(this, LogLevel.Debug, category);
         public ILogBuilder AtInfo(LogCategory category = LogCategory.General) =>
@@ -60,6 +85,14 @@ namespace EldritchGames.EldritchLogger.Core
 
         private bool ShouldLog(LogLevel level, LogCategory category) =>
             !(level < settings.logLevel || !settings.IsCategoryEnabled(category));
+
+        private bool ShouldLog(LogLevel level, string categoryName)
+        {
+            if (level < settings.logLevel) return false;
+            if (Enum.TryParse<LogCategory>(categoryName, out var cat))
+                return settings.IsCategoryEnabled(cat);
+            return settings.IsCustomCategoryEnabled(categoryName);
+        }
 
         public void Dispose()
         {

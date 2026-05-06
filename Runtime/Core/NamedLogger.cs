@@ -31,6 +31,20 @@ namespace EldritchGames.EldritchLogger.Core
             _inner.Log(level, category, message, enriched, exception);
         }
 
+        public void Log(LogLevel level, string categoryName, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null)
+        {
+            var enriched = metadata != null
+                ? new Dictionary<string, object>(metadata)
+                : new Dictionary<string, object>();
+            enriched["Logger"] = _name;
+            _inner.Log(level, categoryName, message, enriched, exception);
+        }
+
+        public void Log(LogLevel level, Enum category, string message,
+                        Dictionary<string, object> metadata = null, Exception exception = null) =>
+            Log(level, category.ToString(), message, metadata, exception);
+
         public ILogBuilder AtDebug(LogCategory category = LogCategory.General)
             => new NamedLogBuilder(_inner.AtDebug(category), _name);
 

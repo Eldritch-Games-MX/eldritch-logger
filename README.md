@@ -5,7 +5,8 @@ Structured logging framework for Unity. Configurable log levels, categories, str
 ## Features
 
 - **Log levels:** `Debug` `Info` `Warning` `Error` `Critical`
-- **Categories:** `General` `Gameplay` `UI` `Audio` `Network` `AI` `Physics` `Animation` `Input`
+- **Built-in categories:** `General` `Gameplay` `UI` `Audio` `Network` `AI` `Physics` `Animation` `Input`
+- **Custom categories:** add named categories in the inspector, assign colors, log against them via string or any user-defined enum
 - Color-coded output in the Unity Console
 - ScriptableObject configuration (`LogSettings`)
 - Fluent builder API — chainable, expressive, zero boilerplate
@@ -38,6 +39,7 @@ Add to `Packages/manifest.json`:
 3. Configure in the inspector:
    - Minimum log level (entries below this level are silently filtered)
    - Enabled categories (unchecked categories are silently filtered)
+   - **Custom Categories** — type a name and click **Add** to create a new category; set its color and toggle; click **✕** to remove
    - Export formats: JSON, XML, Text
    - Export directory and file name
    - Console options: color coding, stack trace suppression
@@ -94,6 +96,27 @@ _logger.Log(LogLevel.Info,    LogCategory.UI,      "Button clicked");
 _logger.Log(LogLevel.Warning, LogCategory.Network, "Packet dropped");
 _logger.Log(LogLevel.Error,   LogCategory.AI,      "Pathfinding failed");
 ```
+
+### Custom Categories
+
+Add categories without touching source. In the `LogSettings` inspector, type a name under **Custom Categories** and click **Add**. Assign a color and toggle it on/off like any built-in category.
+
+Log against them by **string** or by **your own enum**:
+
+```csharp
+// String — quick and direct
+_logger.Log(LogLevel.Info, "Economy", "Player purchased sword");
+
+// Enum — compile-time safe, recommended for larger projects
+public enum GameCategory { Economy, Quests, Systems }
+
+_logger.Log(LogLevel.Debug,   GameCategory.Economy, "Gold overflow detected");
+_logger.Log(LogLevel.Warning, GameCategory.Quests,  "Quest state corrupted");
+```
+
+The enum value's name must exactly match the category name registered in `LogSettings` (case-sensitive). Custom categories respect the enabled toggle and color settings just like built-in ones.
+
+> **Collision guard:** the inspector prevents adding a custom category whose name matches a built-in `LogCategory` enum value.
 
 ### Fluent Builder
 
@@ -160,6 +183,11 @@ ELoggerFactory.SetFactory(new EldritchLoggerFactory(myRootLogger));
 - Verify the minimum **log level** in `LogSettings` — entries below it are silently dropped.
 - Verify the **enabled categories** — all categories must be checked for the corresponding logs to appear.
 - For MonoBehaviours: make sure the logger is initialized in `Awake()`, not as a field initializer.
+
+**Custom category logs not appearing**
+- Confirm the category name is registered in `LogSettings` under **Custom Categories** and its toggle is enabled.
+- When using an enum, verify `MyEnum.Value.ToString()` matches the registered name exactly — it is case-sensitive.
+- Custom categories added at runtime are not persisted; they must be registered in the `LogSettings` asset.
 
 **File exports not created**
 - Enable at least one export format in `LogSettings`.

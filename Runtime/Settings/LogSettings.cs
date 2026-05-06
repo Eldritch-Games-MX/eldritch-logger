@@ -2,6 +2,7 @@ using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Visuals;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Settings
@@ -60,13 +61,42 @@ namespace EldritchGames.EldritchLogger.Settings
             new CategoryColor(LogCategory.Input, new Color(0f, 0.5f, 0f))
         };
 
+        [Header("Custom Categories")]
+        public List<CustomCategoryEntry> customCategories = new List<CustomCategoryEntry>();
+
         public Color GetCategoryColor(LogCategory category)
         {
             var entry = categoryColors.Find(c => c.category == category);
             return entry != null ? entry.color : Color.white;
         }
 
+        public Color GetCustomCategoryColor(string name)
+        {
+            var entry = customCategories.Find(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
+            return entry != null ? entry.color : Color.white;
+        }
+
         public bool IsCategoryEnabled(LogCategory category) => enabledCategories.Contains(category);
+
+        public bool IsCustomCategoryEnabled(string name)
+        {
+            var entry = customCategories.Find(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
+            return entry != null && entry.enabled;
+        }
+
+        public bool AddCustomCategory(string name, Color color)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            if (Enum.TryParse<LogCategory>(name, true, out _)) return false;
+            if (customCategories.Any(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))) return false;
+            customCategories.Add(new CustomCategoryEntry(name, color));
+            return true;
+        }
+
+        public void RemoveCustomCategory(string name)
+        {
+            customCategories.RemoveAll(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
+        }
 
         public void ApplyVerbosePreset()
         {
@@ -99,11 +129,13 @@ namespace EldritchGames.EldritchLogger.Settings
         {
             enabledCategories = new List<LogCategory>(
                 (LogCategory[])Enum.GetValues(typeof(LogCategory)));
+            foreach (var c in customCategories) c.enabled = true;
         }
 
         public void DisableAllCategories()
         {
             enabledCategories.Clear();
+            foreach (var c in customCategories) c.enabled = false;
         }
     }
 
