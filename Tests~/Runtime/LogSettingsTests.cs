@@ -3,9 +3,7 @@ using EldritchGames.EldritchLogger.Pipeline;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Sinks.Config;
 using NUnit.Framework;
-using System.IO;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
@@ -95,101 +93,5 @@ namespace EldritchGames.EldritchLogger.Tests
                 Object.DestroyImmediate(copy);
             }
         }
-
-        [Test]
-        public void LegacyAsset_IsMigrated()
-        {
-            const string folder = "Assets/__EldritchLoggerTests";
-            const string path = folder + "/LegacyLogSettings.asset";
-            var scriptGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(settings)));
-            Directory.CreateDirectory(folder);
-            File.WriteAllText(path, LegacyYaml(scriptGuid));
-
-            try
-            {
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
-                var legacy = AssetDatabase.LoadAssetAtPath<LogSettings>(path);
-
-                Assert.That(legacy, Is.Not.Null);
-                Assert.That(legacy.minimumLevel, Is.EqualTo(LogLevel.Warning));
-                Assert.That(legacy.categories.Select(c => c.name).Take(9), Is.EqualTo(LogCategory.BuiltIn.Select(c => c.Name)));
-                Assert.That(legacy.IsCategoryEnabled(LogCategory.General), Is.True);
-                Assert.That(legacy.IsCategoryEnabled(LogCategory.UI), Is.True);
-                Assert.That(legacy.IsCategoryEnabled(LogCategory.Gameplay), Is.False);
-                Assert.That(legacy.GetCategoryColor(LogCategory.UI), Is.EqualTo(Color.red));
-                Assert.That(legacy.IsCategoryEnabled("Loot"), Is.True);
-                Assert.That(legacy.GetCategoryColor("Loot"), Is.EqualTo(Color.blue));
-
-                var console = legacy.sinks.OfType<UnityConsoleSinkConfig>().Single();
-                Assert.That(console.suppressUnityStackTrace, Is.False);
-                Assert.That(console.useContextObjects, Is.False);
-            }
-            finally
-            {
-                AssetDatabase.DeleteAsset(folder);
-            }
-        }
-
-        [Test]
-        public void LegacyAsset_WithoutColorList_GetsDefaultColors()
-        {
-            const string folder = "Assets/__EldritchLoggerTests";
-            const string path = folder + "/NoColors.asset";
-            var scriptGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(settings)));
-            Directory.CreateDirectory(folder);
-            var yaml = LegacyYaml(scriptGuid);
-            yaml = yaml.Substring(0, yaml.IndexOf("  categoryColors:")) + "  customCategories: []\n";
-            File.WriteAllText(path, yaml);
-
-            try
-            {
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
-                var legacy = AssetDatabase.LoadAssetAtPath<LogSettings>(path);
-
-                Assert.That(legacy.GetCategoryColor(LogCategory.Gameplay), Is.EqualTo(Color.green));
-                Assert.That(legacy.IsCategoryEnabled(LogCategory.UI), Is.True);
-            }
-            finally
-            {
-                AssetDatabase.DeleteAsset(folder);
-            }
-        }
-
-        private static string LegacyYaml(string scriptGuid) => $@"%YAML 1.1
-%TAG !u! tag:unity3d.com,2011:
---- !u!114 &11400000
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {{fileID: 0}}
-  m_PrefabInstance: {{fileID: 0}}
-  m_PrefabAsset: {{fileID: 0}}
-  m_GameObject: {{fileID: 0}}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {{fileID: 11500000, guid: {scriptGuid}, type: 3}}
-  m_Name: LegacyLogSettings
-  m_EditorClassIdentifier:
-  logLevel: 2
-  enabledCategories: 0000000002000000
-  clearOnStartup: 1
-  timestampFormat: HH:mm:ss
-  messagePrefix:
-  enableExport: 0
-  exportFileName: eldritch_logs
-  exportDirectory:
-  useContextObjects: 0
-  suppressUnityStackTrace: 0
-  filterLoggerFrames: 1
-  useCategoryColors: 1
-  categoryColors:
-  - category: 0
-    color: {{r: 1, g: 1, b: 1, a: 1}}
-  - category: 2
-    color: {{r: 1, g: 0, b: 0, a: 1}}
-  customCategories:
-  - name: Loot
-    color: {{r: 0, g: 0, b: 1, a: 1}}
-    enabled: 1
-";
     }
 }

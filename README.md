@@ -261,23 +261,6 @@ static void RegisterConsoleServices() =>
 
 **Assets → Create → Eldritch Logger → Console Theme**, placed in `Resources/Themes` (folder configurable). To theme extra UI elements, add a `ThemeableGraphic` component or implement `IThemeable`.
 
-## Migrating to 3.0
-
-**Logger (from 2.x)**
-- `LogSettings` assets migrate automatically when loaded (categories, colors, Unity Console options).
-- Export settings are replaced by **Sinks**. Re-add the file sinks you want. JSON output is now `.jsonl`.
-- `LogCategory` is a struct instead of an enum: `LogCategory.Gameplay` etc. still work; `switch` statements over it must use `if`/`==`.
-- `IEldritchLogger` has two members (`IsEnabled`, `Log(LogEntry)`); the `Log(...)` overloads and `AtInfo()` etc. are extension methods — existing call sites compile unchanged.
-- `new EldritchLogger(settings)` → `EldritchLoggerBuilder.FromSettings(settings).Build()`.
-- `ILogSink.OnLogReceived` → `Emit`; sinks declare `Name` and `MinimumLevel`. `SinkCategory`, the exporters and `LogEntryFormatter` were replaced by the `Sinks` and `Formatting` namespaces.
-
-**Console (from the standalone `eldritch-console`)**
-- Remove the old package. Namespaces moved from `EldritchGames.EldritchConsole` to `EldritchGames.EldritchLogger.Console`; the assembly is `EldritchLogger.Console`.
-- `IConsoleCommand` / `IAdvancedConsoleCommand` are replaced by `IConsoleCommand` with a `CommandDescriptor` and `CommandContext`.
-- `ServiceRegistry` and `CommandLoader` are replaced by `ConsoleServiceProvider` and `CommandDiscovery`.
-- `ConsoleTheme.font` is now `fontAsset` (`TMP_FontAsset`).
-- Script GUIDs are unchanged, so scenes, prefabs and theme assets keep their references.
-
 ## Troubleshooting
 
 **Nothing prints**

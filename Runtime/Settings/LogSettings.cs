@@ -3,7 +3,6 @@ using EldritchGames.EldritchLogger.Sinks.Config;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace EldritchGames.EldritchLogger.Settings
 {
@@ -15,11 +14,9 @@ namespace EldritchGames.EldritchLogger.Settings
     public class LogSettings : ScriptableObject, ISerializationCallbackReceiver
     {
         [Tooltip("Entries below this level are discarded before reaching any sink.")]
-        [FormerlySerializedAs("logLevel")]
         public LogLevel minimumLevel = LogLevel.Debug;
 
         [Tooltip("Built-in and custom categories. Entries in unknown or disabled categories are discarded.")]
-        [FormerlySerializedAs("customCategories")]
         public List<CategorySetting> categories = CreateDefaultCategories();
 
         [Header("Formatting")]
@@ -37,23 +34,6 @@ namespace EldritchGames.EldritchLogger.Settings
         [Header("Bootstrap")]
         [Tooltip("Create the logger automatically before the first scene loads.")]
         public bool autoInitialize = true;
-
-        // ---- 2.x fields, read once for migration and then cleared ----
-        [SerializeField, HideInInspector, FormerlySerializedAs("enabledCategories")]
-        private List<int> legacyEnabledCategories = new();
-        [SerializeField, HideInInspector, FormerlySerializedAs("categoryColors")]
-        private List<LegacyCategoryColor> legacyCategoryColors = new();
-        [SerializeField, HideInInspector, FormerlySerializedAs("suppressUnityStackTrace")]
-        private int legacySuppressUnityStackTrace = -1;
-        [SerializeField, HideInInspector, FormerlySerializedAs("useContextObjects")]
-        private int legacyUseContextObjects = -1;
-
-        [Serializable]
-        private class LegacyCategoryColor
-        {
-            public int category;
-            public Color color = Color.white;
-        }
 
         [NonSerialized] private Dictionary<string, CategorySetting> lookup;
 
@@ -124,55 +104,6 @@ namespace EldritchGames.EldritchLogger.Settings
 
         public void OnBeforeSerialize() { }
 
-        public void OnAfterDeserialize()
-        {
-            InvalidateCache();
-            MigrateLegacyFields();
-        }
-
-        private void MigrateLegacyFields()
-        {
-            categories ??= new List<CategorySetting>();
-            sinks ??= new List<LogSinkConfig>();
-
-            if (legacyCategoryColors.Count > 0 || legacyEnabledCategories.Count > 0)
-            {
-                // 2.x assets saved before `categoryColors` existed used its initializer, i.e. the default colors.
-                // Assets that saved the list showed white for any category missing from it.
-                var defaults = CreateDefaultCategories();
-                bool hadColorList = legacyCategoryColors.Count > 0;
-
-                var builtIns = new List<CategorySetting>();
-                for (int i = 0; i < LogCategory.BuiltIn.Count; i++)
-                {
-                    var color = hadColorList ? Color.white : defaults[i].color;
-                    foreach (var legacy in legacyCategoryColors)
-                        if (legacy.category == i) color = legacy.color;
-
-                    builtIns.Add(new CategorySetting(LogCategory.BuiltIn[i].Name, color,
-                                                     legacyEnabledCategories.Contains(i)));
-                }
-
-                // Custom categories were loaded into `categories` via FormerlySerializedAs.
-                categories.RemoveAll(c => c == null || c.IsBuiltIn);
-                categories.InsertRange(0, builtIns);
-
-                legacyCategoryColors.Clear();
-                legacyEnabledCategories.Clear();
-            }
-
-            if (legacySuppressUnityStackTrace >= 0 || legacyUseContextObjects >= 0)
-            {
-                foreach (var sink in sinks)
-                {
-                    if (sink is not UnityConsoleSinkConfig console) continue;
-                    if (legacySuppressUnityStackTrace >= 0) console.suppressUnityStackTrace = legacySuppressUnityStackTrace != 0;
-                    if (legacyUseContextObjects >= 0) console.useContextObjects = legacyUseContextObjects != 0;
-                }
-
-                legacySuppressUnityStackTrace = -1;
-                legacyUseContextObjects = -1;
-            }
-        }
+        public void OnAfterDeserialize() => InvalidateCache();
     }
 }
