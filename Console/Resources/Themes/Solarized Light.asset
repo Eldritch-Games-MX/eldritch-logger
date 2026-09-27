@@ -11,9 +11,9 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b68abd4b973acbe4b8842b212d2cb8e3, type: 3}
   m_Name: Solarized Light
-  m_EditorClassIdentifier: EldritchLogger.Console::EldritchGames.EldritchLogger.Console.Settings.ConsoleTheme
+  m_EditorClassIdentifier: EldritchLogger.Console::EldritchGames.EldritchLogger.Console.Themes.ConsoleTheme
   backgroundColor: {r: 0.99215686, g: 0.9647059, b: 0.8901961, a: 1}
   textColor: {r: 0.39607844, g: 0.48235294, b: 0.5137255, a: 1}
   promptColor: {r: 0.14901961, g: 0.54509807, b: 0.8235294, a: 1}
-  font: {fileID: 0}
+  fontAsset: {fileID: 0}
   fontSize: 14

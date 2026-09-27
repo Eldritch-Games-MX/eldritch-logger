@@ -1,45 +1,40 @@
 using System;
 
-namespace EldritchGames.EldritchLogger.Console.Loader
+namespace EldritchGames.EldritchLogger.Console.UI
 {
-    /// <summary>
-    /// Defines the contract for the console view, responsible for user interaction and display.
-    /// </summary>
-    public interface IConsoleView
+    /// <summary>Displays console output.</summary>
+    public interface IConsoleOutputView
     {
-        /// <summary>
-        /// Raised when the user submits a command.
-        /// </summary>
-        event Action<string> OnCommandSubmitted;
-
-        /// <summary>
-        /// Appends a message to the console log.
-        /// </summary>
         void AppendLog(string message);
 
-        /// <summary>
-        /// Clears all log entries from the console view.
-        /// </summary>
         void Clear();
+    }
 
-        /// <summary>
-        /// Toggles the visibility of the console UI.
-        /// </summary>
-        void SetVisibility();
+    /// <summary>The command input line.</summary>
+    public interface IConsoleInputView
+    {
+        /// <summary>Raised when the user submits a non-empty command line.</summary>
+        event Action<string> OnCommandSubmitted;
 
-        /// <summary>
-        /// Raised when the user modifies the input text.
-        /// </summary>
+        /// <summary>Raised when the input text changes.</summary>
         event Action<string> OnInputChanged;
 
-        /// <summary>
-        /// Displays a ghost suggestion for autocomplete inline with the input field.
-        /// </summary>
+        /// <summary>Shows <paramref name="suggestion"/> as a completion of the current token (null clears it).</summary>
         void ShowGhostSuggestion(string suggestion);
 
-        /// <summary>
-        /// Accepts the current ghost suggestion and replaces the input text.
-        /// </summary>
+        /// <summary>Replaces the input with the ghost suggestion, if any.</summary>
         void AcceptGhostSuggestion();
+    }
+
+    public interface IConsoleVisibility
+    {
+        bool IsVisible { get; }
+
+        void ToggleVisibility();
+    }
+
+    /// <summary>The complete console UI.</summary>
+    public interface IConsoleView : IConsoleOutputView, IConsoleInputView, IConsoleVisibility
+    {
     }
 }

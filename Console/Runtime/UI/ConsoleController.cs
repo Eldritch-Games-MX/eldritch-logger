@@ -1,44 +1,49 @@
 using EldritchGames.EldritchLogger.Console.Autocompletion;
-using EldritchGames.EldritchLogger.Console.Parsing;
-using EldritchGames.EldritchLogger.Console.Registry;
+using EldritchGames.EldritchLogger.Console.Execution;
+using EldritchGames.EldritchLogger.Pipeline;
 using System;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace EldritchGames.EldritchLogger.Console.Loader
+namespace EldritchGames.EldritchLogger.Console.UI
 {
-    public class ConsoleController : IDisposable
+    /// <summary>
+    /// Connects the view to the executor and autocomplete, handles the toggle / accept-suggestion
+    /// input actions and optionally forwards Unity log messages to the view.
+    /// All collaborators are injected.
+    /// </summary>
+    public sealed class ConsoleController : IDisposable
     {
         private readonly IConsoleView view;
-        private readonly ICommandParser parser;
         private readonly ICommandExecutor executor;
-        private readonly IAutocompleteProvider autocompleteProvider;
-        private readonly Lexer lexer;
+        private readonly IAutocompleteProvider autocomplete;
         private readonly InputAction toggleAction;
-        private readonly InputAction acceptSuggestion;
+        private readonly InputAction acceptSuggestionAction;
         private readonly bool captureUnityLogs;
         private bool disposed;
 
         /// <summary>
-        /// When true, Unity log messages emitted while the EldritchLogger is dispatching
-        /// (i.e. the echo produced by <c>UnityConsoleExporter</c>) are ignored, because the
-        /// console already receives those entries through its own log sink.
+        /// When true, Unity log messages emitted while the EldritchLogger is dispatching (the echo of
+        /// <c>UnityConsoleSink</c>) are ignored, because the console receives those entries through its own sink.
         /// </summary>
         public bool FilterLoggerEchoes { get; set; }
 
+        /// <param name="toggleAction">Shows/hides the console. May be null.</param>
+        /// <param name="acceptSuggestionAction">Accepts the ghost suggestion. May be null.</param>
+        /// <param name="captureUnityLogs">Forward <c>Application.logMessageReceived</c> messages to the view.</param>
         public ConsoleController(IConsoleView view,
-                                 ICommandParser parser,
                                  ICommandExecutor executor,
+                                 IAutocompleteProvider autocomplete,
                                  InputAction toggleAction,
-                                 ICommandRegistry registry,
+                                 InputAction acceptSuggestionAction,
                                  bool captureUnityLogs = true)
         {
-            this.view = view;
-            this.parser = parser;
-            this.executor = executor;
-            this.lexer = new Lexer();
+            this.view = view ?? throw new ArgumentNullException(nameof(view));
+            this.executor = executor ?? throw new ArgumentNullException(nameof(executor));
+            this.autocomplete = autocomplete ?? throw new ArgumentNullException(nameof(autocomplete));
             this.toggleAction = toggleAction;
+            this.acceptSuggestionAction = acceptSuggestionAction;
             this.captureUnityLogs = captureUnityLogs;
 
             view.OnCommandSubmitted += HandleCommand;
@@ -46,43 +51,45 @@ namespace EldritchGames.EldritchLogger.Console.Loader
             if (captureUnityLogs)
                 Application.logMessageReceived += HandleUnityLog;
 
-            toggleAction.performed += HandleToggle;
-            toggleAction.Enable();
+            if (toggleAction != null)
+            {
+                toggleAction.performed += HandleToggle;
+                toggleAction.Enable();
+            }
 
-            acceptSuggestion = new InputAction(binding: "<Keyboard>/tab");
-            acceptSuggestion.performed += HandleAcceptSuggestion;
-            acceptSuggestion.Enable();
-            autocompleteProvider = new AutocompleteProvider(registry);
+            if (acceptSuggestionAction != null)
+            {
+                acceptSuggestionAction.performed += HandleAcceptSuggestion;
+                acceptSuggestionAction.Enable();
+            }
         }
 
-        private void HandleCommand(string input)
-        {
-            var tokens = lexer.Tokenize(input);
-            var result = parser.Parse(tokens, input);
-            executor.Execute(result);
-        }
-        private void HandleInputChanged(string text)
-        {
-            var suggestion = autocompleteProvider.Suggest(text).FirstOrDefault();
-            view.ShowGhostSuggestion(suggestion);
-        }
+        private void HandleCommand(string input) => executor.Execute(input);
+
+        private void HandleInputChanged(string text) =>
+            view.ShowGhostSuggestion(autocomplete.Suggest(text).FirstOrDefault());
 
         private void HandleUnityLog(string condition, string stackTrace, LogType type)
         {
             if (FilterLoggerEchoes && LogDispatcher.IsDispatching)
                 return;
 
-            view.AppendLog(condition);
+            view.AppendLog(type switch
+            {
+                LogType.Warning => $"<color=#FFC107>{condition}</color>",
+                LogType.Error or LogType.Exception or LogType.Assert => $"<color=#FF5252>{condition}</color>",
+                _ => condition
+            });
         }
 
         private void HandleToggle(InputAction.CallbackContext ctx) => ToggleConsole();
 
-        private void HandleAcceptSuggestion(InputAction.CallbackContext ctx) => view.AcceptGhostSuggestion();
-
-        public void ToggleConsole()
+        private void HandleAcceptSuggestion(InputAction.CallbackContext ctx)
         {
-            view.SetVisibility();
+            if (view.IsVisible) view.AcceptGhostSuggestion();
         }
+
+        public void ToggleConsole() => view.ToggleVisibility();
 
         public void Dispose()
         {
@@ -94,10 +101,8 @@ namespace EldritchGames.EldritchLogger.Console.Loader
             if (captureUnityLogs)
                 Application.logMessageReceived -= HandleUnityLog;
 
-            toggleAction.performed -= HandleToggle;
-            acceptSuggestion.performed -= HandleAcceptSuggestion;
-            acceptSuggestion.Disable();
-            acceptSuggestion.Dispose();
+            if (toggleAction != null) toggleAction.performed -= HandleToggle;
+            if (acceptSuggestionAction != null) acceptSuggestionAction.performed -= HandleAcceptSuggestion;
         }
     }
 }

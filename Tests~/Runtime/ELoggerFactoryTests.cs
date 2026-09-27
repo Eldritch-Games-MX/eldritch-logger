@@ -1,115 +1,74 @@
 using EldritchGames.EldritchLogger.Core;
-using Moq;
+using EldritchGames.EldritchLogger.Mapper;
+using EldritchGames.EldritchLogger.Pipeline;
 using NUnit.Framework;
+using System;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
-    [TestFixture]
     public class ELoggerFactoryTests
     {
+        private RecordingSink sink;
+        private Core.EldritchLogger root;
+
+        [SetUp]
+        public void SetUp()
+        {
+            sink = new RecordingSink();
+            root = new Core.EldritchLogger(new DelegateFilter((_, _) => true), null, new LogEntryMapper(),
+                                           new LogDispatcher(), new FakeClock(), new[] { sink });
+        }
+
         [TearDown]
         public void TearDown()
         {
             ELoggerFactory.ClearFactory();
+            root.Dispose();
         }
 
         [Test]
-        public void GetLogger_WhenFactoryNotSet_ReturnsNullLogger()
+        public void WithoutFactory_ReturnsNullLogger_AndNoSinkRegistry()
         {
-            var logger = ELoggerFactory.GetLogger("Test");
-
-            Assert.That(logger, Is.SameAs(NullLogger.Instance));
-        }
-
-        [Test]
-        public void GetLoggerGeneric_WhenFactoryNotSet_ReturnsNullLogger()
-        {
-            var logger = ELoggerFactory.GetLogger<ELoggerFactoryTests>();
-
-            Assert.That(logger, Is.SameAs(NullLogger.Instance));
-        }
-
-        [Test]
-        public void GetLogger_WhenFactorySet_DelegatesToFactory()
-        {
-            var mockFactory = new Mock<ILoggerFactory>();
-            var mockLogger  = new Mock<IEldritchLogger>();
-            mockFactory.Setup(f => f.GetLogger("MyClass")).Returns(mockLogger.Object);
-
-            ELoggerFactory.SetFactory(mockFactory.Object);
-            var logger = ELoggerFactory.GetLogger("MyClass");
-
-            Assert.That(logger, Is.SameAs(mockLogger.Object));
-            mockFactory.Verify(f => f.GetLogger("MyClass"), Times.Once);
-        }
-
-        [Test]
-        public void GetLoggerGeneric_WhenFactorySet_UsesTypeName()
-        {
-            var mockFactory = new Mock<ILoggerFactory>();
-            var mockLogger  = new Mock<IEldritchLogger>();
-            mockFactory.Setup(f => f.GetLogger(nameof(ELoggerFactoryTests))).Returns(mockLogger.Object);
-
-            ELoggerFactory.SetFactory(mockFactory.Object);
-            var logger = ELoggerFactory.GetLogger<ELoggerFactoryTests>();
-
-            Assert.That(logger, Is.SameAs(mockLogger.Object));
-        }
-
-        [Test]
-        public void SetFactory_Null_ThrowsArgumentNullException()
-        {
-            Assert.Throws<System.ArgumentNullException>(() => ELoggerFactory.SetFactory(null));
-        }
-
-        [Test]
-        public void ClearFactory_AfterSet_ResetsToNullLogger()
-        {
-            ELoggerFactory.SetFactory(new Mock<ILoggerFactory>().Object);
-            ELoggerFactory.ClearFactory();
-
-            var logger = ELoggerFactory.GetLogger("Any");
-
-            Assert.That(logger, Is.SameAs(NullLogger.Instance));
-        }
-
-        [Test]
-        public void Sinks_WhenFactoryNotSet_ReturnsNull()
-        {
+            Assert.That(ELoggerFactory.GetLogger("x"), Is.SameAs(NullLogger.Instance));
+            Assert.That(ELoggerFactory.GetLogger<ELoggerFactoryTests>(), Is.SameAs(NullLogger.Instance));
             Assert.That(ELoggerFactory.Sinks, Is.Null);
         }
 
         [Test]
-        public void Sinks_WhenFactorySupportsRegistration_ReturnsFactory()
+        public void NamedLogger_StampsLoggerName()
         {
-            var factory = new EldritchLoggerFactory(new Mock<IEldritchLogger>().Object);
+            ELoggerFactory.SetFactory(new EldritchLoggerFactory(root));
 
-            ELoggerFactory.SetFactory(factory);
+            ELoggerFactory.GetLogger<ELoggerFactoryTests>().AtInfo().Log("hi");
 
-            Assert.That(ELoggerFactory.Sinks, Is.SameAs(factory));
+            Assert.That(sink.Entries[0].GetMetadata(LogPropertyKeys.Logger), Is.EqualTo(nameof(ELoggerFactoryTests)));
         }
 
         [Test]
-        public void EldritchLoggerFactory_AddSink_DelegatesToRoot()
+        public void Sinks_DelegatesToRootLogger()
         {
-            var root = new Mock<IEldritchLogger>();
-            var registry = root.As<ISinkRegistry>();
-            var sink = new Mock<ILogSink>().Object;
-            var factory = new EldritchLoggerFactory(root.Object);
+            ELoggerFactory.SetFactory(new EldritchLoggerFactory(root));
+            var extra = new RecordingSink();
 
-            factory.AddSink(sink);
-            factory.RemoveSink(sink);
+            ELoggerFactory.Sinks.AddSink(extra);
+            ELoggerFactory.GetLogger("x").AtInfo().Log("hi");
 
-            registry.Verify(r => r.AddSink(sink), Times.Once);
-            registry.Verify(r => r.RemoveSink(sink), Times.Once);
+            Assert.That(extra.Entries, Has.Count.EqualTo(1));
         }
 
         [Test]
-        public void EldritchLoggerFactory_AddSink_WhenRootUnsupported_Throws()
+        public void Factory_RejectsBlankNamesAndNullRoot()
         {
-            var factory = new EldritchLoggerFactory(new Mock<IEldritchLogger>().Object);
+            Assert.Throws<ArgumentNullException>(() => new EldritchLoggerFactory(null));
+            Assert.Throws<ArgumentException>(() => new EldritchLoggerFactory(root).GetLogger(" "));
+            Assert.Throws<ArgumentNullException>(() => ELoggerFactory.SetFactory(null));
+        }
 
-            Assert.Throws<System.NotSupportedException>(() => factory.AddSink(new Mock<ILogSink>().Object));
+        [Test]
+        public void Factory_WithRootWithoutRegistry_ThrowsNotSupported()
+        {
+            var factory = new EldritchLoggerFactory(NullLogger.Instance);
+            Assert.Throws<NotSupportedException>(() => factory.AddSink(new RecordingSink()));
         }
     }
 }

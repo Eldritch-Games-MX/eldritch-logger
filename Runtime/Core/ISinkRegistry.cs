@@ -1,3 +1,5 @@
+using EldritchGames.EldritchLogger.Sinks;
+
 namespace EldritchGames.EldritchLogger.Core
 {
     /// <summary>
@@ -7,14 +9,8 @@ namespace EldritchGames.EldritchLogger.Core
     /// </summary>
     public interface ISinkRegistry
     {
-        /// <summary>
-        /// Registers <paramref name="sink"/> under its <see cref="ILogSink.Category"/>.
-        /// </summary>
         void AddSink(ILogSink sink);
 
-        /// <summary>
-        /// Unregisters a previously added <paramref name="sink"/>.
-        /// </summary>
         void RemoveSink(ILogSink sink);
     }
 }

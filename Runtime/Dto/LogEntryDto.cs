@@ -1,62 +1,53 @@
+using EldritchGames.EldritchLogger.Core;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using UnityEngine;
+using System.Xml.Serialization;
 
 namespace EldritchGames.EldritchLogger.Dto
 {
     /// <summary>
-    /// Represents a single metadata key/value pair for a log entry.
-    /// Used in <see cref="LogEntryDto"/> to serialize metadata in XML/JSON-friendly form.
+    /// A single metadata key/value pair in serialization-friendly form.
     /// </summary>
     public class MetadataEntry
     {
-        /// <summary>
-        /// The metadata key (e.g. "GameObject", "ComponentContext").
-        /// </summary>
         public string Key { get; set; }
-
-        /// <summary>
-        /// The metadata value as a string.
-        /// </summary>
         public string Value { get; set; }
     }
 
     /// <summary>
-    /// A simple data transfer object (DTO) representing a log entry
-    /// in a serialization-friendly format.
-    /// Used by all exporters to ensure consistent output.
+    /// Serialization-friendly view of a processed log entry. This is what sinks receive.
+    /// Sinks must treat it as read-only: the same instance is shared by every sink.
     /// </summary>
     public class LogEntryDto
     {
-        /// <summary>
-        /// The timestamp of the log entry.
-        /// </summary>
+        /// <summary>Timestamp in UTC.</summary>
         public DateTime Timestamp { get; set; }
 
-        /// <summary>
-        /// The log level (e.g. Debug, Info, Warning, Error, Critical).
-        /// </summary>
-        public string Level { get; set; }
+        [JsonConverter(typeof(StringEnumConverter))]
+        public LogLevel Level { get; set; }
 
-        /// <summary>
-        /// The category of the log entry (e.g. Gameplay, UI, General).
-        /// </summary>
         public string Category { get; set; }
 
-        /// <summary>
-        /// The main message of the log entry.
-        /// </summary>
         public string Message { get; set; }
 
-        /// <summary>
-        /// Optional metadata entries associated with the log entry.
-        /// </summary>
         public List<MetadataEntry> Metadata { get; set; } = new();
 
-        /// <summary>
-        /// The exception message if an exception was logged, otherwise null.
-        /// </summary>
+        /// <summary>Exception type, message and (filtered) stack trace, or null.</summary>
         public string Exception { get; set; }
+
+        /// <summary>Unity object the entry relates to. Main-thread only; never serialized.</summary>
+        [XmlIgnore, JsonIgnore]
+        public UnityEngine.Object Context { get; set; }
+
+        /// <summary>Returns the value of metadata <paramref name="key"/>, or null.</summary>
+        public string GetMetadata(string key)
+        {
+            if (Metadata == null) return null;
+            foreach (var entry in Metadata)
+                if (entry.Key == key) return entry.Value;
+            return null;
+        }
     }
 }

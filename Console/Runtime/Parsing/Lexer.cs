@@ -28,6 +28,7 @@ namespace EldritchGames.EldritchLogger.Console.Parsing
         /// </remarks>
         public TokenList Tokenize(string input)
         {
+            input ??= string.Empty;
             var tokens = new List<Token>();
             var stream = new CharacterStream(input);
 

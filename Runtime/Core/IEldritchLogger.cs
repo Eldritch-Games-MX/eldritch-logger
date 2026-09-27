@@ -1,59 +1,23 @@
-using EldritchGames.EldritchLogger.Builder;
-using System;
-using System.Collections.Generic;
+using EldritchGames.EldritchLogger.Domain;
 
 namespace EldritchGames.EldritchLogger.Core
 {
     /// <summary>
-    /// Defines the contract for the Eldritch logging API.
-    /// Provides a <c>Log()</c> method and fluent builder entry points for common log levels.
+    /// The logging contract. Deliberately minimal: convenience overloads and the fluent
+    /// builder live in <see cref="EldritchLoggerExtensions"/>, so implementations and
+    /// decorators only need these two members.
     /// </summary>
     public interface IEldritchLogger
     {
         /// <summary>
-        /// Logs a message with the specified level and category.
-        /// File exporters run asynchronously in the background; this call returns immediately.
+        /// Returns false when an entry with this level and category would be discarded.
+        /// Check it before doing expensive work to build a message.
         /// </summary>
-        void Log(LogLevel level, LogCategory category, string message,
-                 Dictionary<string, object> metadata = null, Exception exception = null);
+        bool IsEnabled(LogLevel level, LogCategory category);
 
         /// <summary>
-        /// Logs a message using a custom string category name.
-        /// Use this overload for user-defined categories added via the Settings UI.
+        /// Processes <paramref name="entry"/>. Never throws; file sinks write in the background.
         /// </summary>
-        void Log(LogLevel level, string categoryName, string message,
-                 Dictionary<string, object> metadata = null, Exception exception = null);
-
-        /// <summary>
-        /// Logs a message using any user-defined enum as the category.
-        /// The enum value's name must match a custom category registered in LogSettings.
-        /// </summary>
-        void Log(LogLevel level, Enum category, string message,
-                 Dictionary<string, object> metadata = null, Exception exception = null);
-
-        /// <summary>
-        /// Creates a fluent builder for a debug-level log entry.
-        /// </summary>
-        ILogBuilder AtDebug(LogCategory category = LogCategory.General);
-
-        /// <summary>
-        /// Creates a fluent builder for an info-level log entry.
-        /// </summary>
-        ILogBuilder AtInfo(LogCategory category = LogCategory.General);
-
-        /// <summary>
-        /// Creates a fluent builder for a warning-level log entry.
-        /// </summary>
-        ILogBuilder AtWarning(LogCategory category = LogCategory.General);
-
-        /// <summary>
-        /// Creates a fluent builder for an error-level log entry.
-        /// </summary>
-        ILogBuilder AtError(LogCategory category = LogCategory.General);
-
-        /// <summary>
-        /// Creates a fluent builder for a critical-level log entry.
-        /// </summary>
-        ILogBuilder AtCritical(LogCategory category = LogCategory.General);
+        void Log(LogEntry entry);
     }
 }

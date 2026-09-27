@@ -1,5 +1,5 @@
-using EldritchGames.EldritchLogger.Console.Loader;
 using EldritchGames.EldritchLogger.Console.Settings;
+using EldritchGames.EldritchLogger.Console.Themes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,8 +9,16 @@ using UnityEngine.UI;
 
 namespace EldritchGames.EldritchLogger.Console.UI
 {
-    public class ConsoleView : MonoBehaviour, IConsoleView
+    /// <summary>
+    /// uGUI/TextMeshPro console view. Lines are stored in a <see cref="ConsoleLogBuffer"/> and a
+    /// fixed pool of text objects shows the newest ones; the pool is redrawn at most once per
+    /// frame, however many lines arrive.
+    /// </summary>
+    public class ConsoleView : MonoBehaviour, IConsoleView, IThemeable
     {
+        private const int DefaultPoolSize = 20;
+        private const int DefaultBufferSize = 500;
+
         [Header("Prefabs")]
         [SerializeField] private TMP_Text logLinePrefab;
         [Header("References")]
@@ -21,9 +29,14 @@ namespace EldritchGames.EldritchLogger.Console.UI
         [SerializeField] private Canvas canvas;
         [SerializeField] private CommandConsoleSettings settings;
 
-        private readonly int defaultPoolSize = 20;
-        private readonly Queue<TMP_Text> logEntryPool = new();
+        private readonly List<TMP_Text> lines = new();
+        private ConsoleLogBuffer buffer;
         private IConsoleLogFormatter formatter;
+        private TMP_InputField wiredInput;
+        private Button wiredButton;
+        private Scrollbar[] scrollbars;
+        private ConsoleTheme theme;
+        private int renderedVersion = -1;
 
         public event Action<string> OnCommandSubmitted;
         public event Action<string> OnInputChanged;
@@ -32,190 +45,269 @@ namespace EldritchGames.EldritchLogger.Console.UI
         public TMP_InputField CommandInput => commandInput;
         public TMP_Text GhostText => ghostText;
         public Button SendButton => sendButton;
+        public ConsoleLogBuffer Buffer => buffer;
+
+        /// <summary>The pooled line objects, oldest first.</summary>
+        public IReadOnlyList<TMP_Text> Lines => lines;
+
+        public bool IsVisible => canvas != null && canvas.enabled;
 
         private void Awake()
         {
-            Initialize();
+            if (Application.isPlaying) Initialize();
         }
 
         private void Start()
         {
-            SetVisibility();
+            if (Application.isPlaying && canvas != null)
+                canvas.enabled = false; // the console starts hidden
         }
 
-        public void Configure(TMP_Text prefab, Transform content, TMP_InputField input,
-                              TMP_Text ghost, Canvas c, Button button, IConsoleLogFormatter formatter)
+        private void LateUpdate()
+        {
+            if (buffer != null && buffer.Version != renderedVersion)
+                Refresh();
+        }
+
+        private void OnDestroy() => UnwireInput();
+
+        /// <summary>Sets references from code (tests, procedurally built UI) and initializes.</summary>
+        public void Configure(TMP_Text prefab, Transform content, TMP_InputField input, TMP_Text ghost,
+                              Canvas targetCanvas, Button button, IConsoleLogFormatter logFormatter = null,
+                              CommandConsoleSettings consoleSettings = null)
         {
             logLinePrefab = prefab;
             logContent = content;
             commandInput = input;
             ghostText = ghost;
-            canvas = c;
+            canvas = targetCanvas;
             sendButton = button;
-            this.formatter = formatter;
+            settings = consoleSettings;
+            formatter = logFormatter;
+            buffer = null;
+            Initialize();
         }
 
-        public void SetConsoleLogFormatter(IConsoleLogFormatter formatter)
-        {
-            this.formatter = formatter;
-        }
+        public void SetConsoleLogFormatter(IConsoleLogFormatter logFormatter) => formatter = logFormatter;
 
+        /// <summary>Creates the buffer and line pool and hooks up input. Safe to call more than once.</summary>
         public void Initialize()
         {
-            // Initialize default formatter if not set via inspector or Configure
-            formatter ??= new ConsoleLogFormatter();
+            formatter ??= new ConsoleLogFormatter(settings != null && settings.stripRichTextTags);
+
+            if (buffer == null)
+            {
+                buffer = new ConsoleLogBuffer(settings != null ? Math.Max(1, settings.maxBufferedLines) : DefaultBufferSize);
+                renderedVersion = -1;
+                BuildPool(settings != null ? Math.Max(1, settings.poolSize) : DefaultPoolSize);
+            }
+
+            WireInput();
+        }
+
+        private void BuildPool(int size)
+        {
+            foreach (var line in lines)
+                if (line != null) Destroy(line.gameObject);
+            lines.Clear();
 
             if (logLinePrefab == null || logContent == null)
             {
-                Debug.LogWarning("ConsoleView: logLinePrefab or logContent not set, skipping pool init.");
-            } else if(settings == null)
-            {
-                Debug.LogWarning("ConsoleView: settings not set, setting default of 20.");
-                InstantiatePool(defaultPoolSize);
-            } else if(settings.poolSize <= 0)
-            {
-                Debug.LogWarning("ConsoleView: poolSize in settings is not positive, setting default of 20.");
-                InstantiatePool(defaultPoolSize);
-            }
-            else
-            {
-                InstantiatePool(settings.poolSize);
+                Debug.LogWarning("ConsoleView: logLinePrefab or logContent not set; lines will not be displayed.");
+                return;
             }
 
-            if (commandInput != null)
+            for (int i = 0; i < size; i++)
             {
-                commandInput.onSubmit.AddListener(HandleCommandSubmit);
-                commandInput.onValueChanged.AddListener(input => OnInputChanged?.Invoke(input));
+                var line = Instantiate(logLinePrefab, logContent);
+                line.gameObject.SetActive(false);
+                lines.Add(line);
+                if (theme != null) StyleLine(line, theme);
             }
 
-            if (sendButton != null)
+            scrollbars = null;
+        }
+
+        private void WireInput()
+        {
+            if (commandInput != wiredInput)
             {
-                sendButton.onClick.AddListener(HandleButtonClick);
+                UnwireInput();
+                if (commandInput != null)
+                {
+                    commandInput.onSubmit.AddListener(HandleSubmit);
+                    commandInput.onValueChanged.AddListener(HandleValueChanged);
+                }
+                wiredInput = commandInput;
+            }
+
+            if (sendButton != wiredButton)
+            {
+                if (wiredButton != null) wiredButton.onClick.RemoveListener(HandleButtonClick);
+                if (sendButton != null) sendButton.onClick.AddListener(HandleButtonClick);
+                wiredButton = sendButton;
             }
         }
 
-        private void HandleCommandSubmit(string input)
+        private void UnwireInput()
         {
-            if (string.IsNullOrWhiteSpace(input))
-                return;
+            if (wiredInput != null)
+            {
+                wiredInput.onSubmit.RemoveListener(HandleSubmit);
+                wiredInput.onValueChanged.RemoveListener(HandleValueChanged);
+                wiredInput = null;
+            }
+            if (wiredButton != null)
+            {
+                wiredButton.onClick.RemoveListener(HandleButtonClick);
+                wiredButton = null;
+            }
+        }
+
+        private void HandleSubmit(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return;
 
             OnCommandSubmitted?.Invoke(input);
             commandInput.text = string.Empty;
+            commandInput.ActivateInputField();
         }
+
+        private void HandleValueChanged(string input) => OnInputChanged?.Invoke(input);
 
         private void HandleButtonClick()
         {
-            var input = commandInput.text;
-            HandleCommandSubmit(input);
-        }
-
-        private void InstantiatePool(int poolSize)
-        {
-            for (int i = 0; i < poolSize; i++)
-            {
-                var entry = Instantiate(logLinePrefab, logContent);
-                entry.gameObject.SetActive(false);
-                logEntryPool.Enqueue(entry);
-            }
+            if (commandInput != null) HandleSubmit(commandInput.text);
         }
 
         public void AppendLog(string message)
         {
-            if (formatter != null)
-            {
-                message = formatter.Format(settings, message);
-            }
-
-            TMP_Text line;
-            if (logEntryPool.Count > 0)
-            {
-                line = logEntryPool.Dequeue();
-                line.gameObject.SetActive(true);
-            }
-            else
-            {
-                // recycle oldest
-                line = logContent.GetChild(0).GetComponent<TMP_Text>();
-                line.transform.SetAsLastSibling();
-            }
-
-            line.text = message;
-            logEntryPool.Enqueue(line);
+            if (buffer == null) Initialize();
+            buffer.Add(formatter.Format(message));
         }
 
         public void Clear()
         {
-            foreach (Transform child in logContent)
-            {
-                var text = child.GetComponent<TMP_Text>();
-                if (text != null)
-                {
-                    text.text = string.Empty;
-                    text.gameObject.SetActive(false);
-                }
-            }
-
-            logEntryPool.Clear();
-            foreach (Transform child in logContent)
-            {
-                if (child.TryGetComponent<TMP_Text>(out var text))
-                {
-                    logEntryPool.Enqueue(text);
-                }
-            }
+            if (buffer == null) Initialize();
+            buffer.Clear();
         }
 
-        public void SetVisibility()
+        /// <summary>Redraws the pool from the buffer immediately (normally done once per frame).</summary>
+        public void Refresh()
         {
-            if (canvas != null)
-                canvas.enabled = !canvas.enabled;
+            if (buffer == null) return;
+
+            int visible = Math.Min(buffer.Count, lines.Count);
+            int first = buffer.Count - visible;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var line = lines[i];
+                if (line == null) continue;
+
+                bool active = i < visible;
+                if (active) line.text = buffer[first + i];
+                if (line.gameObject.activeSelf != active) line.gameObject.SetActive(active);
+            }
+
+            renderedVersion = buffer.Version;
+        }
+
+        public void ToggleVisibility()
+        {
+            if (canvas == null) return;
+            canvas.enabled = !canvas.enabled;
+            if (canvas.enabled && commandInput != null) commandInput.ActivateInputField();
         }
 
         public void ShowGhostSuggestion(string suggestion)
         {
-            if (ghostText == null || commandInput == null)
-                return;
+            if (ghostText == null || commandInput == null) return;
 
             var typed = commandInput.text;
-
             if (string.IsNullOrEmpty(typed) || string.IsNullOrEmpty(suggestion))
             {
                 ghostText.text = string.Empty;
                 return;
             }
 
+            // Replace the token being typed with the suggestion, keeping earlier tokens as typed.
+            bool endsWithSpace = char.IsWhiteSpace(typed[typed.Length - 1]);
             var tokens = typed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length == 0)
-            {
-                ghostText.text = suggestion;
-                return;
-            }
+            var keep = endsWithSpace ? tokens : tokens.Take(tokens.Length - 1);
+            var prefix = string.Join(" ", keep);
 
-            var current = tokens.Last();
-
-            if (suggestion.StartsWith(current, StringComparison.OrdinalIgnoreCase))
-            {
-                var prefix = string.Join(" ", tokens.Take(tokens.Length - 1));
-                ghostText.text = string.IsNullOrEmpty(prefix)
-                    ? suggestion
-                    : prefix + " " + suggestion;
-            }
-            else
-            {
-                ghostText.text = typed + " " + suggestion;
-            }
-
-            ghostText.color = new Color(0.7f, 0.7f, 0.7f, 0.5f);
+            ghostText.text = string.IsNullOrEmpty(prefix) ? suggestion : prefix + " " + suggestion;
         }
 
         public void AcceptGhostSuggestion()
         {
-            if (!string.IsNullOrEmpty(ghostText?.text))
+            if (ghostText == null || commandInput == null || string.IsNullOrEmpty(ghostText.text)) return;
+
+            commandInput.text = ghostText.text;
+            commandInput.caretPosition = commandInput.text.Length;
+            ghostText.text = string.Empty;
+        }
+
+        public void ApplyTheme(ConsoleTheme newTheme)
+        {
+            if (newTheme == null) return;
+            theme = newTheme;
+
+            foreach (var line in lines)
+                if (line != null) StyleLine(line, newTheme);
+
+            var colors = BuildColorBlock(newTheme);
+
+            if (commandInput != null)
             {
-                commandInput.text = ghostText.text;
-                commandInput.caretPosition = commandInput.text.Length;
-                ghostText.text = string.Empty;
+                if (commandInput.textComponent != null) StyleText(commandInput.textComponent, newTheme, newTheme.textColor);
+                if (commandInput.placeholder is TMP_Text placeholder)
+                    StyleText(placeholder, newTheme, WithAlpha(newTheme.textColor, 0.5f));
+                commandInput.colors = colors;
+            }
+
+            if (ghostText != null)
+                StyleText(ghostText, newTheme, WithAlpha(newTheme.promptColor, 0.5f));
+
+            if (sendButton != null)
+            {
+                sendButton.colors = colors;
+                if (sendButton.targetGraphic != null) sendButton.targetGraphic.color = newTheme.promptColor;
+                var label = sendButton.GetComponentInChildren<TMP_Text>(true);
+                if (label != null) StyleText(label, newTheme, newTheme.textColor);
+            }
+
+            scrollbars ??= GetComponentsInChildren<Scrollbar>(true);
+            foreach (var scrollbar in scrollbars)
+            {
+                if (scrollbar == null) continue;
+                scrollbar.colors = colors;
+                if (scrollbar.handleRect != null && scrollbar.handleRect.TryGetComponent<Image>(out var handle))
+                    handle.color = newTheme.promptColor;
             }
         }
+
+        private static void StyleLine(TMP_Text line, ConsoleTheme theme) => StyleText(line, theme, theme.textColor);
+
+        private static void StyleText(TMP_Text text, ConsoleTheme theme, Color color)
+        {
+            text.color = color;
+            text.fontSize = theme.fontSize;
+            if (theme.fontAsset != null) text.font = theme.fontAsset;
+        }
+
+        private static Color WithAlpha(Color color, float alpha) => new(color.r, color.g, color.b, alpha);
+
+        private static ColorBlock BuildColorBlock(ConsoleTheme theme) => new()
+        {
+            normalColor = theme.textColor,
+            highlightedColor = theme.promptColor,
+            pressedColor = theme.promptColor * 0.9f,
+            selectedColor = theme.promptColor,
+            disabledColor = WithAlpha(theme.textColor, 0.3f),
+            colorMultiplier = 1f,
+            fadeDuration = 0.1f
+        };
     }
 }

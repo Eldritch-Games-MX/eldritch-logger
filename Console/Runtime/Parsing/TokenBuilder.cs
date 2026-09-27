@@ -69,8 +69,12 @@ namespace EldritchGames.EldritchLogger.Console.Parsing
         /// </returns>
         private Token Classify(string value)
         {
-            if (value.StartsWith("--")) return new Token(TokenType.Flag, value.Substring(2));
-            if (value.StartsWith("-")) return new Token(TokenType.Flag, value.Substring(1));
+            if (value.Length > 2 && value.StartsWith("--")) return new Token(TokenType.Flag, value.Substring(2));
+
+            // "-v" is a flag, but "-5" / "-0.5" are negative numbers and "-" is a plain argument.
+            if (value.Length > 1 && value[0] == '-' && !char.IsDigit(value[1]) && value[1] != '.')
+                return new Token(TokenType.Flag, value.Substring(1));
+
             return new Token(TokenType.Argument, value);
         }
     }

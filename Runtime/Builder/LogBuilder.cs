@@ -3,89 +3,92 @@ using EldritchGames.EldritchLogger.Domain;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace EldritchGames.EldritchLogger.Builder
 {
     /// <summary>
-    /// Provides a fluent builder for constructing and dispatching log entries.
-    /// Implements <see cref="ILogBuilder"/> to support chaining methods.
+    /// Default <see cref="ILogBuilder"/>. Mutates itself and returns <c>this</c>,
+    /// so a chain allocates one builder and at most one dictionary.
     /// </summary>
     public sealed class LogBuilder : ILogBuilder
     {
         private readonly IEldritchLogger logger;
         private readonly LogLevel level;
-        private readonly LogCategory category;
-        private readonly Dictionary<string, object> metadata;
-        private readonly Exception exception;
-        private readonly object evt; // can be Delegate or UnityEventBase
-        private readonly GameObject gameObject;
-        private readonly string eventName;
+        private LogCategory category;
+        private Dictionary<string, object> properties;
+        private Exception exception;
+        private UnityEngine.Object context;
 
-        public LogBuilder(IEldritchLogger logger,
-                          LogLevel level,
-                          LogCategory category = default,
-                          Dictionary<string, object> metadata = null,
-                          Exception exception = null,
-                          object evt = null,
-                          GameObject gameObject = null,
-                          string eventName = null)
+        public LogBuilder(IEldritchLogger logger, LogLevel level, LogCategory category = default)
         {
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
             this.level = level;
             this.category = category;
-            this.metadata = metadata ?? new Dictionary<string, object>();
-            this.exception = exception;
-            this.evt = evt;
-            this.gameObject = gameObject;
-            this.eventName = eventName;
         }
 
-        public ILogBuilder Category(LogCategory category) =>
-            new LogBuilder(logger, level, category, new Dictionary<string, object>(metadata), exception, evt, gameObject, eventName);
+        public ILogBuilder Category(LogCategory category)
+        {
+            this.category = category;
+            return this;
+        }
 
         public ILogBuilder AddKeyValue(string key, object value)
         {
-            var newMetadata = new Dictionary<string, object>(metadata) { [key] = value };
-            return new LogBuilder(logger, level, category, newMetadata, exception, evt, gameObject, eventName);
+            if (key == null) throw new ArgumentNullException(nameof(key));
+            (properties ??= new Dictionary<string, object>())[key] = value;
+            return this;
         }
 
-        public ILogBuilder WithException(Exception ex) =>
-            new LogBuilder(logger, level, category, new Dictionary<string, object>(metadata), ex, evt, gameObject, eventName);
+        public ILogBuilder WithException(Exception ex)
+        {
+            exception = ex;
+            return this;
+        }
 
         public ILogBuilder WithEvent(object eventObj, string eventName)
         {
-            var loggedEvent = new LoggedEvent(eventName, eventObj);
+            if (eventObj == null) throw new ArgumentNullException(nameof(eventObj));
 
-            return new LogBuilder(logger, level, category,
-                new Dictionary<string, object>(metadata),
-                exception, loggedEvent.EventObject, gameObject, loggedEvent.Name);
+            return eventObj is UnityEventBase
+                ? AddKeyValue(LogPropertyKeys.UnityEvent, eventName ?? "UnityEvent")
+                : AddKeyValue(LogPropertyKeys.CSharpEvent, eventName ?? "AnonymousHandler");
         }
 
         public ILogBuilder WithComponent(Component component)
         {
-            var newMetadata = new Dictionary<string, object>(metadata)
-            {
-                ["ComponentContext"] = $"{component.GetType().Name}@{component.gameObject.name}"
-            };
-            return new LogBuilder(logger, level, category, newMetadata, exception, evt, component.gameObject, eventName);
+            if (component == null) throw new ArgumentNullException(nameof(component));
+
+            AddKeyValue(LogPropertyKeys.Component, component.GetType().Name);
+            AddKeyValue(LogPropertyKeys.GameObject, component.gameObject.name);
+            context = component;
+            return this;
+        }
+
+        public ILogBuilder WithContext(UnityEngine.Object context)
+        {
+            this.context = context;
+            return this;
         }
 
         public void Log(string message)
         {
-            var dict = new Dictionary<string, object>(metadata);
-
-            if (evt is Delegate)
-                dict["CSharpEvent"] = eventName ?? "AnonymousHandler";
-            else if (evt is UnityEngine.Events.UnityEventBase)
-                dict["UnityEvent"] = eventName ?? "UnityEvent";
-
-            if (gameObject != null && !dict.ContainsKey("GameObject"))
-                dict["GameObject"] = gameObject.name;
-
-            dict["Scene"] = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            dict["BuildVersion"] = Application.version;
-
-            logger.Log(level, category, message, dict, exception);
+            logger.Log(new LogEntry(level, category, message, properties, exception, context));
         }
+    }
+
+    internal sealed class NullLogBuilder : ILogBuilder
+    {
+        internal static readonly NullLogBuilder Instance = new();
+
+        private NullLogBuilder() { }
+
+        public ILogBuilder Category(LogCategory category) => this;
+        public ILogBuilder AddKeyValue(string key, object value) => this;
+        public ILogBuilder WithException(Exception ex) => this;
+        public ILogBuilder WithEvent(object eventObj, string eventName) => this;
+        public ILogBuilder WithComponent(Component component) => this;
+        public ILogBuilder WithContext(UnityEngine.Object context) => this;
+        public void Log(string message) { }
     }
 }

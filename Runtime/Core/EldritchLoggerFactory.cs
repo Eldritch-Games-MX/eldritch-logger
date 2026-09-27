@@ -1,3 +1,4 @@
+using EldritchGames.EldritchLogger.Sinks;
 using System;
 
 namespace EldritchGames.EldritchLogger.Core
