@@ -10,7 +10,7 @@ using System.Linq;
 
 namespace EldritchGames.EldritchLogger.Core
 {
-    public class EldritchLogger : IEldritchLogger, IDisposable
+    public class EldritchLogger : IEldritchLogger, ISinkRegistry, IDisposable
     {
         private readonly LogSettings settings;
         private readonly ILogEntryMapper mapper;
@@ -92,6 +92,18 @@ namespace EldritchGames.EldritchLogger.Core
             if (Enum.TryParse<LogCategory>(categoryName, out var cat))
                 return settings.IsCategoryEnabled(cat);
             return settings.IsCustomCategoryEnabled(categoryName);
+        }
+
+        public void AddSink(ILogSink sink)
+        {
+            if (sink == null) throw new ArgumentNullException(nameof(sink));
+            sinkManager.AddSink(sink.Category, sink);
+        }
+
+        public void RemoveSink(ILogSink sink)
+        {
+            if (sink == null) throw new ArgumentNullException(nameof(sink));
+            sinkManager.RemoveSink(sink.Category, sink);
         }
 
         public void Dispose()

@@ -19,6 +19,7 @@ Structured logging framework for Unity. Configurable log levels, categories, str
 - Exception logging with type and message
 - Exporters: JSON, XML, Text file, Unity Console
 - Automatic cleanup of previous session logs
+- **Runtime Console** — in-game command console that shows logger output, with extensible commands, autocompletion, history, and themes
 
 ## Installation
 
@@ -175,6 +176,70 @@ ELoggerFactory.SetFactory(new EldritchLoggerFactory(myRootLogger));
 ```
 
 `ELoggerFactory.ClearFactory()` resets to the no-op `NullLogger`. Called automatically on application quit.
+
+### Custom Sinks
+
+Attach additional sinks at runtime through `ELoggerFactory.Sinks` (null until the logger is initialized):
+
+```csharp
+ELoggerFactory.Sinks?.AddSink(mySink);    // mySink : ILogSink
+ELoggerFactory.Sinks?.RemoveSink(mySink);
+```
+
+## Runtime Console
+
+An in-game command console lives in the `EldritchLogger.Console` assembly (`using EldritchGames.EldritchLogger.Console.*`). It requires the Input System and uGUI/TextMeshPro packages, which are installed as dependencies.
+
+### Setup
+
+1. **Assets → Create → Eldritch Logger → Console Settings** — create a `CommandConsoleSettings` asset.
+2. Drag the `Packages/Eldritch Logger/Console/Prefabs/Eldritch Console` prefab into your scene.
+3. On its `ConsoleBootstrap` component assign the settings asset and an `InputActionReference` for toggling the console. Optionally assign a `LogSettings` asset (defaults to `Resources/LogSettings`).
+
+### Logger Integration
+
+| Setting (`CommandConsoleSettings`) | Effect |
+|---|---|
+| `showEldritchLogs` | Registers a `ConsoleLogSink` so EldritchLogger entries appear in the console, formatted like the Unity Console output. |
+| `showUnityLogs` | Also shows plain `Debug.Log` messages (`Application.logMessageReceived`). |
+
+When both are enabled, the Unity Console echo of a logger entry is filtered out, so each entry appears only once.
+
+### Built-in Commands
+
+| Command | Description |
+|---|---|
+| `help [command]` | Lists all commands, or usage for one |
+| `clear` | Clears the console output |
+| `history [--limit N]` | Shows previously entered commands |
+| `repeat <n> <command> [--silent] [--delay=N]` | Repeats a command |
+| `theme <name>` | Applies a theme from `Resources/Themes` (`Dark`, `Light`, `Solarized Dark`, `Solarized Light`) |
+
+### Custom Commands
+
+Implement `IConsoleCommand` (positional args) or `IAdvancedConsoleCommand` (flags/options), and register them through an `ICommandGroup`. Groups are discovered automatically at startup; constructor parameters are resolved from `ServiceRegistry`.
+
+```csharp
+using EldritchGames.EldritchLogger.Console.Commands;
+using EldritchGames.EldritchLogger.Console.Registry;
+
+public class GameplayCommands : ICommandGroup
+{
+    public string Name => "Gameplay";
+    public void Register(ICommandRegistry registry) => registry.Register(new GodModeCommand());
+}
+```
+
+New themes: **Assets → Create → Eldritch Logger → Console Theme**, placed in a `Resources/Themes` folder.
+
+### Migrating from `eldritch-console`
+
+The standalone console package has been merged into this package.
+- Remove the old `eldritch-console` folder / package from your project.
+- Replace `EldritchGames.EldritchConsole` with `EldritchGames.EldritchLogger.Console` in `using` statements.
+- `ConsoleTheme` now lives in `EldritchGames.EldritchLogger.Console.Settings`.
+- Assembly references: `EldritchConsole.Runtime` → `EldritchLogger.Console`.
+- Script and asset GUIDs are unchanged, so existing scenes, prefabs and theme assets keep their references.
 
 ## Troubleshooting
 

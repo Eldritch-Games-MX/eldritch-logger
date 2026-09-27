@@ -54,5 +54,31 @@ namespace EldritchGames.EldritchLogger.Tests
             syncSink.Verify(s => s.OnLogReceived(It.Is<LogEntryDto>(d => d.Message == "Hello")), Times.Once);
             asyncSink.Verify(s => s.Export(It.Is<LogEntryDto>(d => d.Message == "Hello"), It.IsAny<string>()), Times.Once);
         }
+
+        [Test]
+        public void IsDispatching_IsTrueOnlyWhileSinksRun()
+        {
+            bool observed = false;
+            var sink = new Mock<ILogSink>();
+            sink.Setup(s => s.OnLogReceived(It.IsAny<LogEntryDto>()))
+                .Callback(() => observed = LogDispatcher.IsDispatching);
+
+            new LogDispatcher().Dispatch(new LogEntryDto(), new[] { sink.Object });
+
+            Assert.That(observed, Is.True);
+            Assert.That(LogDispatcher.IsDispatching, Is.False);
+        }
+
+        [Test]
+        public void IsDispatching_IsResetWhenSinkThrows()
+        {
+            var sink = new Mock<ILogSink>();
+            sink.Setup(s => s.OnLogReceived(It.IsAny<LogEntryDto>())).Throws<System.InvalidOperationException>();
+
+            Assert.Throws<System.InvalidOperationException>(() =>
+                new LogDispatcher().Dispatch(new LogEntryDto(), new[] { sink.Object }));
+
+            Assert.That(LogDispatcher.IsDispatching, Is.False);
+        }
     }
 }

@@ -72,5 +72,44 @@ namespace EldritchGames.EldritchLogger.Tests
 
             Assert.That(logger, Is.SameAs(NullLogger.Instance));
         }
+
+        [Test]
+        public void Sinks_WhenFactoryNotSet_ReturnsNull()
+        {
+            Assert.That(ELoggerFactory.Sinks, Is.Null);
+        }
+
+        [Test]
+        public void Sinks_WhenFactorySupportsRegistration_ReturnsFactory()
+        {
+            var factory = new EldritchLoggerFactory(new Mock<IEldritchLogger>().Object);
+
+            ELoggerFactory.SetFactory(factory);
+
+            Assert.That(ELoggerFactory.Sinks, Is.SameAs(factory));
+        }
+
+        [Test]
+        public void EldritchLoggerFactory_AddSink_DelegatesToRoot()
+        {
+            var root = new Mock<IEldritchLogger>();
+            var registry = root.As<ISinkRegistry>();
+            var sink = new Mock<ILogSink>().Object;
+            var factory = new EldritchLoggerFactory(root.Object);
+
+            factory.AddSink(sink);
+            factory.RemoveSink(sink);
+
+            registry.Verify(r => r.AddSink(sink), Times.Once);
+            registry.Verify(r => r.RemoveSink(sink), Times.Once);
+        }
+
+        [Test]
+        public void EldritchLoggerFactory_AddSink_WhenRootUnsupported_Throws()
+        {
+            var factory = new EldritchLoggerFactory(new Mock<IEldritchLogger>().Object);
+
+            Assert.Throws<System.NotSupportedException>(() => factory.AddSink(new Mock<ILogSink>().Object));
+        }
     }
 }

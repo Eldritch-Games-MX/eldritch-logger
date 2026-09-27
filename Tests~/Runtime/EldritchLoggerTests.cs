@@ -95,5 +95,32 @@ namespace EldritchGames.EldritchLogger.Tests
                 It.IsAny<System.Collections.Generic.Dictionary<string, object>>(),
                 null), Times.Once);
         }
+
+        [Test]
+        public void AddSink_ShouldReceiveLogEntries()
+        {
+            using var logger = new Core.EldritchLogger(CreateSettings());
+            var sink = new Mock<ILogSink>();
+            sink.SetupGet(s => s.Category).Returns(SinkCategory.Runtime);
+
+            logger.AddSink(sink.Object);
+            logger.Log(LogLevel.Info, LogCategory.General, "hello");
+
+            sink.Verify(s => s.OnLogReceived(It.Is<Dto.LogEntryDto>(d => d.Message == "hello")), Times.Once);
+        }
+
+        [Test]
+        public void RemoveSink_ShouldStopDelivery()
+        {
+            using var logger = new Core.EldritchLogger(CreateSettings());
+            var sink = new Mock<ILogSink>();
+            sink.SetupGet(s => s.Category).Returns(SinkCategory.Runtime);
+
+            logger.AddSink(sink.Object);
+            logger.RemoveSink(sink.Object);
+            logger.Log(LogLevel.Info, LogCategory.General, "hello");
+
+            sink.Verify(s => s.OnLogReceived(It.IsAny<Dto.LogEntryDto>()), Times.Never);
+        }
     }
 }

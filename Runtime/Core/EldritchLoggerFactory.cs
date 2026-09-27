@@ -20,7 +20,7 @@ namespace EldritchGames.EldritchLogger.Core
     /// <see cref="NullLogger.Instance"/> until a new factory is registered.
     /// </para>
     /// </remarks>
-    public sealed class EldritchLoggerFactory : ILoggerFactory, IDisposable
+    public sealed class EldritchLoggerFactory : ILoggerFactory, ISinkRegistry, IDisposable
     {
         private readonly IEldritchLogger _root;
 
@@ -42,6 +42,18 @@ namespace EldritchGames.EldritchLogger.Core
                 throw new ArgumentException("Logger name must not be null or whitespace.", nameof(name));
             return new NamedLogger(_root, name);
         }
+
+        /// <inheritdoc/>
+        /// <exception cref="NotSupportedException">Thrown when the root logger does not implement <see cref="ISinkRegistry"/>.</exception>
+        public void AddSink(ILogSink sink) => RootRegistry.AddSink(sink);
+
+        /// <inheritdoc/>
+        /// <exception cref="NotSupportedException">Thrown when the root logger does not implement <see cref="ISinkRegistry"/>.</exception>
+        public void RemoveSink(ILogSink sink) => RootRegistry.RemoveSink(sink);
+
+        private ISinkRegistry RootRegistry =>
+            _root as ISinkRegistry
+            ?? throw new NotSupportedException($"{_root.GetType().Name} does not support runtime sink registration.");
 
         /// <summary>
         /// Disposes the root logger and all its sinks.
