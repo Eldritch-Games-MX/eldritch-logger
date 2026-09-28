@@ -52,6 +52,9 @@ namespace EldritchGames.EldritchLogger.Core
         /// <exception cref="NotSupportedException">Thrown when the root logger does not implement <see cref="ISinkRegistry"/>.</exception>
         public void RemoveSink(ILogSink sink) => RootRegistry.RemoveSink(sink);
 
+        /// <inheritdoc/>
+        public System.Collections.Generic.IReadOnlyList<ILogSink> All => RootRegistry.All;
+
         private ISinkRegistry RootRegistry =>
             _root as ISinkRegistry
             ?? throw new NotSupportedException($"{_root.GetType().Name} does not support runtime sink registration.");

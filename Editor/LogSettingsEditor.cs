@@ -1,4 +1,8 @@
 using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.EditorTools.CodeGen;
+using EldritchGames.EldritchLogger.EditorTools.ProjectSettings;
+using EldritchGames.EldritchLogger.Sinks;
+using EldritchGames.EldritchLogger.Sinks.Files;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Formatting;
 using EldritchGames.EldritchLogger.Settings;
@@ -9,7 +13,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
-namespace EldritchGames.EldritchLogger.UI
+namespace EldritchGames.EldritchLogger.EditorTools
 {
     [CustomEditor(typeof(LogSettings))]
     public class LogSettingsEditor : Editor
@@ -56,6 +60,48 @@ namespace EldritchGames.EldritchLogger.UI
             serializedObject.ApplyModifiedProperties();
 
             DrawPreview(settings);
+            DrawRunningSinks();
+        }
+
+        public override bool RequiresConstantRepaint() => EditorApplication.isPlaying;
+
+        private static void DrawRunningSinks()
+        {
+            if (!EditorApplication.isPlaying) return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField(new GUIContent("Running Sinks", "Sinks attached to the logger in this Play Mode session."), EditorStyles.boldLabel);
+
+            var registry = ELoggerFactory.Sinks;
+            if (registry == null)
+            {
+                EditorGUILayout.HelpBox("No logger is installed.", MessageType.Info);
+                return;
+            }
+
+            foreach (var sink in registry.All)
+            {
+                var diagnostics = sink as ISinkDiagnostics;
+                EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+                EditorGUILayout.LabelField(sink.Name, EditorStyles.boldLabel, GUILayout.MinWidth(120));
+                EditorGUILayout.LabelField($"≥ {sink.MinimumLevel}", GUILayout.Width(80));
+                if (diagnostics != null)
+                {
+                    var dropped = diagnostics.DroppedCount;
+                    var style = dropped > 0 ? EditorStyles.boldLabel : EditorStyles.label;
+                    EditorGUILayout.LabelField($"dropped: {dropped}", style, GUILayout.Width(100));
+                    if (!string.IsNullOrEmpty(diagnostics.Location) &&
+                        GUILayout.Button(new GUIContent("Reveal", diagnostics.Location), GUILayout.Width(60)))
+                        EditorUtility.RevealInFinder(diagnostics.Location);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private static void RevealDirectory(string directory)
+        {
+            System.IO.Directory.CreateDirectory(directory);
+            EditorUtility.RevealInFinder(directory);
         }
 
         private void DrawPresets(LogSettings settings)
@@ -107,7 +153,10 @@ namespace EldritchGames.EldritchLogger.UI
             }
 
             if (toRemove != null)
+            {
                 Modify(settings, "Remove Log Category", s => s.RemoveCategory(toRemove));
+                CategoryCodeGeneration.GenerateIfEnabled(settings);
+            }
 
             EditorGUILayout.BeginHorizontal();
             newCategoryName = EditorGUILayout.TextField(newCategoryName);
@@ -118,6 +167,7 @@ namespace EldritchGames.EldritchLogger.UI
                 Modify(settings, "Add Log Category", s => added = s.AddCategory(name, Color.white));
                 if (added)
                 {
+                    CategoryCodeGeneration.GenerateIfEnabled(settings);
                     newCategoryName = "";
                     addCategoryError = "";
                 }
@@ -138,6 +188,10 @@ namespace EldritchGames.EldritchLogger.UI
                 Modify(settings, "Enable All Categories", s => s.SetAllCategoriesEnabled(true));
             if (GUILayout.Button("Disable All"))
                 Modify(settings, "Disable All Categories", s => s.SetAllCategoriesEnabled(false));
+            if (GUILayout.Button(new GUIContent("Generate Class", "Generate a static class with one field per category (see Project Settings > Eldritch Logger)."), GUILayout.Width(110)))
+                CategoryCodeGeneration.Generate(settings);
+            if (GUILayout.Button(new GUIContent("⚙", "Code generation options"), GUILayout.Width(24)))
+                EldritchLoggerSettingsProvider.Open();
             EditorGUILayout.EndHorizontal();
 
             if (!settings.categories.Any(c => c.enabled))
@@ -160,6 +214,8 @@ namespace EldritchGames.EldritchLogger.UI
                 EditorGUILayout.BeginHorizontal();
                 element.isExpanded = EditorGUILayout.Foldout(element.isExpanded,
                     config != null ? config.DisplayName : "(missing sink type)", true);
+                if (config is FileSinkConfig fileConfig && GUILayout.Button(new GUIContent("Open Folder", "Reveal the log directory."), GUILayout.Width(90)))
+                    RevealDirectory(LogFileLocator.ResolveDirectory(fileConfig.directory));
                 if (GUILayout.Button(new GUIContent("✕", "Remove sink"), GUILayout.Width(24)))
                     removeIndex = i;
                 EditorGUILayout.EndHorizontal();

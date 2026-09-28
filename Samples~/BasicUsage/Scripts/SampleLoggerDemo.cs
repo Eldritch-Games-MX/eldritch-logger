@@ -20,7 +20,7 @@ public class SampleLoggerDemo : MonoBehaviour
 
     void Start()
     {
-        Debug.Log("Starting SampleLoggerDemo...");
+        _logger.AtInfo().Log("Starting SampleLoggerDemo...");
         // --- Direct logging ---
         _logger.Log(LogLevel.Info, LogCategory.Gameplay,
             $"{SampleLogConstants.PLAYER} picked up {SampleLogConstants.ITEM_POTION}",

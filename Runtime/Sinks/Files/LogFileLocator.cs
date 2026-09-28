@@ -20,10 +20,14 @@ namespace EldritchGames.EldritchLogger.Sinks.Files
         /// <param name="extension">Extension including the dot (e.g. <c>.jsonl</c>).</param>
         public LogFileLocator(string directory, string baseName, string extension)
         {
-            this.directory = string.IsNullOrEmpty(directory) ? UnityEngine.Application.persistentDataPath : directory;
+            this.directory = ResolveDirectory(directory);
             this.baseName = string.IsNullOrWhiteSpace(baseName) ? "eldritch_logs" : baseName;
             this.extension = extension ?? throw new ArgumentNullException(nameof(extension));
         }
+
+        /// <summary>The directory file sinks write to: <paramref name="directory"/>, or <c>Application.persistentDataPath</c> when empty.</summary>
+        public static string ResolveDirectory(string directory) =>
+            string.IsNullOrEmpty(directory) ? UnityEngine.Application.persistentDataPath : directory;
 
         /// <summary>Path of the single, overwritten-each-session file.</summary>
         public string SingleFilePath => Path.Combine(directory, baseName + extension);

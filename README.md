@@ -15,7 +15,8 @@ Structured logging framework for Unity, with an in-game command console. Configu
 - One file per session with automatic retention of the last N sessions
 - Thread-safe: log from worker threads
 - Unity context objects — click a log line to select the GameObject
-- **Runtime Console** — in-game command console that shows logger output, with typed commands, autocompletion, history and themes
+- **Runtime Console** — in-game command console that shows logger output, with typed commands, autocompletion, history and themes; stripped from release builds by default, with cheat-command gating
+- **Editor tooling** — Log Viewer window, Console Commands window, Project Settings page, category code generation, and code analyzers
 
 ## Installation
 
@@ -33,9 +34,8 @@ Dependencies (installed automatically): Input System, uGUI (TextMeshPro), Newton
 
 ## Setup
 
-1. **Assets → Create → Eldritch Logger → Log Settings** — create a `LogSettings` asset.
-2. Place it in a `Resources` folder: `Assets/Resources/LogSettings.asset`.
-3. Configure it in the inspector:
+1. Open **Edit → Project Settings → Eldritch Logger** and click **Create Assets/Resources/LogSettings.asset** (or create it from **Assets → Create → Eldritch Logger → Log Settings** inside a `Resources` folder).
+2. Configure it on the same page or in the inspector:
    - **Minimum Log Level** — entries below it are discarded.
    - **Categories** — toggle, color, and add/remove custom categories.
    - **Sinks** — where entries go. The Unity Console sink is there by default; use **Add Sink ▾** for JSON Lines, XML or text files (or your own sink types). Each sink has its own minimum level.
@@ -261,6 +261,79 @@ static void RegisterConsoleServices() =>
 
 **Assets → Create → Eldritch Logger → Console Theme**, placed in `Resources/Themes` (folder configurable). To theme extra UI elements, add a `ThemeableGraphic` component or implement `IThemeable`.
 
+### Release Safety
+
+Each `CommandConsoleSettings` asset has an **Availability**:
+
+| Availability | Runs in |
+|---|---|
+| `DevelopmentBuilds` (default) | Editor and Development Builds |
+| `EditorOnly` | Editor only |
+| `Always` | Everywhere, including release builds (a build warning is logged) |
+| `Never` | Nowhere |
+
+Outside its availability the console destroys itself at startup (its `consoleRoot`, the prefab root by default). When building, it is **stripped from the scenes**, so release players don't contain it at all. To disable the console everywhere, tick **Disable console** in **Project Settings → Eldritch Logger → Console**. This adds the `ELDRITCH_CONSOLE_DISABLED` scripting define.
+
+**Cheats:** mark commands with `[Cheat]` or `new CommandDescriptor(..., isCheat: true)`. They only run when the console's `ICheatPolicy` allows it. The default policy follows **Allow Cheats** on the settings asset. `help` shows `[cheat]` next to them. For per-player rules (e.g. only the multiplayer host), register your own policy:
+
+```csharp
+ConsoleBootstrap.ConfiguringServices += services => services.Register<ICheatPolicy>(new HostOnlyCheatPolicy());
+```
+
+## Editor Tooling
+
+All tools are under **Tools → Eldritch Logger**.
+
+### Log Viewer
+
+**Tools → Eldritch Logger → Log Viewer** browses logger entries:
+- **Live:** entries from the current Play Mode session. They are captured from the moment the logger starts, even if the window is closed. Turn capture off with the **Capture** toggle.
+- **File:** open a `.jsonl` file from the JSON Lines sink. **Open Log Folder** jumps to the default log directory. Lines cut off by a crash are skipped and counted.
+
+Filter by level (with counts), category, logger name and free text, which also searches metadata and exceptions. Select an entry to see its metadata and exception. Double-click an entry to select its context object in the scene.
+
+### Console Commands Window
+
+**Tools → Eldritch Logger → Console Commands**:
+- **Play Mode:**
+  - The live registry: usage, aliases, cheat flag, and the group or type that registered each command.
+  - Commands that were skipped, with the reason.
+  - Name/alias conflicts.
+  - A box to run commands.
+- **Edit Mode:** every discovered command group and `[ConsoleCommand]` type, flagging constructor dependencies that the console does not provide by default. Those types would be skipped unless the dependency is registered through `ConfiguringServices`.
+
+### Project Settings
+
+**Edit → Project Settings → Eldritch Logger** shows which `LogSettings` asset the bootstrap will load (and offers to create one), the full settings inspector, and code generation options. The **Console** sub-page covers release safety and every console settings asset.
+
+### Category Code Generation
+
+Generate a static class with one `LogCategory` field per configured category, so a typo becomes a compile error:
+
+```csharp
+_logger.AtInfo(LogCategories.LootDrops).Log("Chest opened");
+```
+
+Set the output file, namespace and class name in Project Settings, then click **Generate Now** (or **Generate Class** in the `LogSettings` inspector). Enable **Regenerate automatically** to update the class whenever categories are added or removed. The options are stored in `ProjectSettings/EldritchLoggerSettings.asset`; commit it.
+
+### Sink Inspector Helpers
+
+File sinks have an **Open Folder** button. In Play Mode, the `LogSettings` inspector lists the running sinks with their dropped-entry counts, and a **Reveal** button for log files.
+
+### Code Analyzers
+
+The package ships Roslyn analyzers that run on every assembly referencing the logger:
+
+| ID | Warns about |
+|---|---|
+| `ELG001` | `Debug.Log*` in game code. Use an `IEldritchLogger` so entries are filtered and reach every sink. Editor assemblies (`*.Editor`, `Assembly-CSharp-Editor`) are exempt. |
+| `ELG002` | A Debug-level message built with interpolation, concatenation or `string.Format` outside an `if (logger.IsEnabled(...))` check. The string is built even when Debug is off. |
+| `ELG003` | A MonoBehaviour field initialized with `ELoggerFactory.GetLogger`. Initialize it in `Awake()` instead. |
+
+Suppress a rule locally with `#pragma warning disable ELG001`. To change severities, add `Assets/Default.ruleset` (all assemblies) or `Assets/<AssemblyName>.ruleset` (one assembly).
+
+The analyzer source is in `Analyzers~/`. After changing it, rebuild with `dotnet build Analyzers~/EldritchLogger.Analyzers -c Release`, which copies the DLL to `Runtime/Analyzers/`. Run the rule tests with `dotnet run --project Analyzers~/EldritchLogger.Analyzers.Tests`.
+
 ## Troubleshooting
 
 **Nothing prints**
@@ -276,7 +349,13 @@ static void RegisterConsoleServices() =>
 - Internal problems (a sink that throws, a full file queue) are reported in the Unity Console with an `[EldritchLogger]` prefix.
 
 **Console command not found**
-- Look for a `[Console] Skipped ...` warning: a constructor dependency is not registered.
+- Open **Tools → Eldritch Logger → Console Commands**: it lists skipped types with the missing dependency, and name conflicts.
+
+**The console does not appear**
+- Check the settings asset's **Availability** and the **Disable console** toggle in Project Settings → Eldritch Logger → Console. Release builds strip the console unless availability is `Always`.
+
+**"'x' is a cheat and cheats are disabled"**
+- Enable **Allow Cheats** on the console settings, or check your custom `ICheatPolicy`.
 
 ## Samples
 

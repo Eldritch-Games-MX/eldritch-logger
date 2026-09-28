@@ -22,6 +22,8 @@ namespace EldritchGames.EldritchLogger.Pipeline
         /// <summary>The current sinks. The returned array must not be modified.</summary>
         public IReadOnlyList<ILogSink> Snapshot => System.Threading.Volatile.Read(ref snapshot);
 
+        IReadOnlyList<ILogSink> ISinkRegistry.All => Snapshot;
+
         /// <summary>The lowest minimum level of all sinks, used for early filtering.</summary>
         public LogLevel LowestMinimumLevel
         {

@@ -18,17 +18,19 @@ namespace EldritchGames.EldritchLogger.Console.Logging
     /// written to the view when <see cref="Flush"/> is called on the main thread. The queue is
     /// bounded: when it is full the oldest entry is dropped and the drop is reported on the next flush.
     /// </remarks>
-    public sealed class ConsoleLogSink : ILogSink
+    public sealed class ConsoleLogSink : ILogSink, ISinkDiagnostics
     {
         private readonly ILogFormatter formatter;
         private readonly ConcurrentQueue<string> pending = new();
         private readonly int capacity;
         private int count;
         private long dropped;
+        private long totalDropped;
 
         public string Name => "In-game Console";
         public LogLevel MinimumLevel { get; }
-        public long DroppedCount => Interlocked.Read(ref dropped);
+        public long DroppedCount => Interlocked.Read(ref totalDropped);
+        string ISinkDiagnostics.Location => null;
 
         public ConsoleLogSink(ILogFormatter formatter, LogLevel minimumLevel = LogLevel.Debug, int capacity = 1000)
         {
@@ -49,6 +51,7 @@ namespace EldritchGames.EldritchLogger.Console.Logging
             {
                 Interlocked.Decrement(ref count);
                 Interlocked.Increment(ref dropped);
+                Interlocked.Increment(ref totalDropped);
             }
         }
 

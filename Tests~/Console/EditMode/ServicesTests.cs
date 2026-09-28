@@ -5,6 +5,7 @@ using EldritchGames.EldritchLogger.Console.UI;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
 {
@@ -72,11 +73,13 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
             var services = new ConsoleServiceProvider().Register<IConsoleView>(new FakeView());
             var registry = new CommandRegistry();
 
-            int registered = new CommandDiscovery(services, warnings.Add).RegisterAll(registry,
+            var report = new CommandDiscovery(services, warnings.Add).RegisterAll(registry,
                 new[] { typeof(NeedsView), typeof(NeedsMissingService), typeof(OptionalDependency), typeof(ThrowingConstructor) },
                 new[] { typeof(AttributedCommand) });
 
-            Assert.That(registered, Is.EqualTo(3));
+            Assert.That(report.Registrations.Count, Is.EqualTo(3));
+            Assert.That(report.SkippedTypes.Select(s => s.Type), Is.EquivalentTo(new[] { typeof(NeedsMissingService), typeof(ThrowingConstructor) }));
+            Assert.That(report.SourceOf(registry.All.First(c => c.Descriptor.Name == "viewcmd")), Is.EqualTo(typeof(NeedsView)));
             Assert.That(registry.TryGet("viewcmd", out _), Is.True);
             Assert.That(registry.TryGet("optional", out _), Is.True);
             Assert.That(registry.TryGet("attributed", out _), Is.True);
@@ -86,10 +89,11 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
         }
 
         [Test]
-        public void Discovery_FindsTheBuiltInGroupAndAttributedCommands()
+        public void Discovery_FindsTheBuiltInGroup_AndIgnoresTestAssemblies()
         {
             Assert.That(CommandDiscovery.GroupTypes, Does.Contain(typeof(EldritchGames.EldritchLogger.Console.Commands.BuiltIn.CoreCommandGroup)));
-            Assert.That(CommandDiscovery.CommandTypes, Does.Contain(typeof(AttributedCommand)));
+            Assert.That(CommandDiscovery.CommandTypes, Has.No.Member(typeof(AttributedCommand)));
+            Assert.That(CommandDiscovery.GroupTypes, Has.No.Member(typeof(NeedsView)));
         }
     }
 }

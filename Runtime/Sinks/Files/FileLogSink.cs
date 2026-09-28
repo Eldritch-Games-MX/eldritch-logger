@@ -8,13 +8,14 @@ namespace EldritchGames.EldritchLogger.Sinks.Files
     /// Base class for sinks that append serialized entries to a file through a
     /// <see cref="BackgroundLogWriter"/>. Subclasses only decide how an entry is serialized.
     /// </summary>
-    public abstract class FileLogSink : ILogSink, IFlushableSink, IDisposable
+    public abstract class FileLogSink : ILogSink, IFlushableSink, ISinkDiagnostics, IDisposable
     {
         private readonly BackgroundLogWriter writer;
 
         public string Name { get; }
         public LogLevel MinimumLevel { get; }
         public string Path => writer.Path;
+        string ISinkDiagnostics.Location => writer.Path;
         public long DroppedCount => writer.DroppedCount;
 
         protected FileLogSink(string path, LogLevel minimumLevel, int queueCapacity)

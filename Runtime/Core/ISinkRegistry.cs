@@ -12,5 +12,8 @@ namespace EldritchGames.EldritchLogger.Core
         void AddSink(ILogSink sink);
 
         void RemoveSink(ILogSink sink);
+
+        /// <summary>The sinks currently attached (a snapshot).</summary>
+        System.Collections.Generic.IReadOnlyList<ILogSink> All { get; }
     }
 }

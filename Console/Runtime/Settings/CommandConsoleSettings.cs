@@ -6,6 +6,13 @@ namespace EldritchGames.EldritchLogger.Console.Settings
     [CreateAssetMenu(fileName = "Eldritch Console Settings", menuName = "Eldritch Logger/Console Settings")]
     public class CommandConsoleSettings : ScriptableObject
     {
+        [Header("Release Safety")]
+        [Tooltip("Where the console may run. Outside of it the console removes itself at startup, and it is stripped from scenes when building.")]
+        public ConsoleAvailability availability = ConsoleAvailability.DevelopmentBuilds;
+
+        [Tooltip("Allow commands marked as cheats. Replace the ICheatPolicy service for per-player rules (e.g. host only).")]
+        public bool allowCheats = true;
+
         [Header("History")]
         [Tooltip("Maximum number of commands stored in history.")]
         [Min(1)] public int historySize = 50;

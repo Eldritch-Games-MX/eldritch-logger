@@ -28,4 +28,14 @@ namespace EldritchGames.EldritchLogger.Sinks
     {
         void Flush();
     }
+
+    /// <summary>Optional runtime information shown by editor tooling.</summary>
+    public interface ISinkDiagnostics
+    {
+        /// <summary>Where entries end up (a file path), or null.</summary>
+        string Location { get; }
+
+        /// <summary>Entries discarded because the sink's queue was full.</summary>
+        long DroppedCount { get; }
+    }
 }

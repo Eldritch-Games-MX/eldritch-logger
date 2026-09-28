@@ -31,6 +31,8 @@ namespace EldritchGames.EldritchLogger.Console.UI
         [SerializeField] private InputActionReference acceptSuggestion;
         [Tooltip("Formatting settings for logger entries. Falls back to Resources/LogSettings when empty.")]
         [SerializeField] private LogSettings logSettings;
+        [Tooltip("Object removed when the console is not available (see CommandConsoleSettings.availability). Defaults to this GameObject.")]
+        [SerializeField] private GameObject consoleRoot;
 
         private ConsoleServiceProvider services;
         private ConsoleController controller;
@@ -45,12 +47,41 @@ namespace EldritchGames.EldritchLogger.Console.UI
         /// </summary>
         public static event System.Action<ConsoleServiceProvider> ConfiguringServices;
 
+        /// <summary>
+        /// Service types the bootstrap registers before discovery. Command dependencies outside this
+        /// list must be registered through <see cref="ConfiguringServices"/>.
+        /// </summary>
+        public static readonly System.Type[] DefaultServiceTypes =
+        {
+            typeof(ICommandRegistry), typeof(ICommandExecutor), typeof(IConsoleOutput), typeof(IConsoleView),
+            typeof(IConsoleOutputView), typeof(CommandHistory), typeof(CommandConsoleSettings),
+            typeof(IConsoleThemeApplier), typeof(IThemeLoader), typeof(ICheatPolicy)
+        };
+
         public ICommandRegistry Registry { get; private set; }
         public ICommandExecutor Executor { get; private set; }
         public IConsoleOutput Output { get; private set; }
 
+        /// <summary>Result of command discovery: registrations, skipped types and conflicts.</summary>
+        public DiscoveryReport Discovery { get; private set; }
+
+        public CommandConsoleSettings Settings => settings;
+
+        /// <summary>The object removed when the console is unavailable.</summary>
+        public GameObject ConsoleRoot => consoleRoot != null ? consoleRoot : gameObject;
+
+        /// <summary>All services available to commands (after <see cref="ConfiguringServices"/>).</summary>
+        public ConsoleServiceProvider Services => services;
+
         private void Awake()
         {
+            if (!ConsoleAvailabilityPolicy.IsAvailableHere(settings))
+            {
+                Destroy(ConsoleRoot);
+                enabled = false;
+                return;
+            }
+
             if (settings == null)
                 settings = ScriptableObject.CreateInstance<CommandConsoleSettings>();
 
@@ -60,8 +91,9 @@ namespace EldritchGames.EldritchLogger.Console.UI
 
             Registry = new CommandRegistry();
             Output = new ConsoleOutput(view, mirror);
-            Executor = new CommandExecutor(Registry, new Lexer(), new CommandParser(), new ArgumentBinder(),
-                                           history, Output, new CoroutineCommandRunner(this));
+            var executor = new CommandExecutor(Registry, new Lexer(), new CommandParser(), new ArgumentBinder(),
+                                               history, Output, new CoroutineCommandRunner(this));
+            Executor = executor;
 
             services = new ConsoleServiceProvider()
                 .Register(Registry)
@@ -72,7 +104,8 @@ namespace EldritchGames.EldritchLogger.Console.UI
                 .Register(history)
                 .Register(settings)
                 .Register<IConsoleThemeApplier>(themeApplier)
-                .Register(themeLoader);
+                .Register(themeLoader)
+                .Register<ICheatPolicy>(new SettingsCheatPolicy(settings));
 
             try
             {
@@ -83,7 +116,8 @@ namespace EldritchGames.EldritchLogger.Console.UI
                 Debug.LogException(ex);
             }
 
-            new CommandDiscovery(services, message => Debug.LogWarning($"[Console] {message}")).RegisterAll(Registry);
+            executor.CheatPolicy = services.Get<ICheatPolicy>();
+            Discovery = new CommandDiscovery(services, message => Debug.LogWarning($"[Console] {message}")).RegisterAll(Registry);
 
             var acceptAction = acceptSuggestion != null ? acceptSuggestion.action : CreateDefaultAcceptAction();
             controller = new ConsoleController(view, Executor, new AutocompleteProvider(Registry),

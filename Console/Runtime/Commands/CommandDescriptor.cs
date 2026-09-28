@@ -18,11 +18,15 @@ namespace EldritchGames.EldritchLogger.Console.Commands
         public IReadOnlyList<ParameterSpec> Parameters { get; }
         public IReadOnlyList<FlagSpec> Flags { get; }
 
+        /// <summary>Cheat commands only run when the console's <c>ICheatPolicy</c> allows cheats.</summary>
+        public bool IsCheat { get; }
+
         public CommandDescriptor(string name,
                                  string description,
                                  IEnumerable<ParameterSpec> parameters = null,
                                  IEnumerable<FlagSpec> flags = null,
-                                 IEnumerable<string> aliases = null)
+                                 IEnumerable<string> aliases = null,
+                                 bool isCheat = false)
         {
             if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsWhiteSpace))
                 throw new ArgumentException("Command name must be a single non-empty word.", nameof(name));
@@ -32,6 +36,7 @@ namespace EldritchGames.EldritchLogger.Console.Commands
             Parameters = parameters?.ToArray() ?? Array.Empty<ParameterSpec>();
             Flags = flags?.ToArray() ?? Array.Empty<FlagSpec>();
             Aliases = aliases?.ToArray() ?? Array.Empty<string>();
+            IsCheat = isCheat;
 
             for (int i = 0; i < Parameters.Count - 1; i++)
                 if (Parameters[i].Kind != ParameterKind.Single)

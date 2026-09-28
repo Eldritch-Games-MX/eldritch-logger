@@ -23,6 +23,8 @@ namespace EldritchGames.EldritchLogger.Core
 
         public IReadOnlyList<ILogSink> Sinks => sinks.Snapshot;
 
+        IReadOnlyList<ILogSink> ISinkRegistry.All => sinks.Snapshot;
+
         public EldritchLogger(ILogFilter filter,
                               IEnumerable<ILogEnricher> enrichers,
                               ILogEntryMapper mapper,

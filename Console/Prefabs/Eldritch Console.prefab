@@ -1550,6 +1550,7 @@ MonoBehaviour:
   themeApplier: {fileID: 5668510771236257568}
   view: {fileID: 4305329877572812039}
   toggleConsole: {fileID: -3508090286170343939, guid: e83f09088c4c8ef41ab76d06dda6b521, type: 3}
+  consoleRoot: {fileID: 478402749259148517}
 --- !u!1 &6628751486545753194
 GameObject:
   m_ObjectHideFlags: 0

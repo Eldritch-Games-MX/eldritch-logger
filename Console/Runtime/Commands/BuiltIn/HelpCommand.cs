@@ -1,4 +1,5 @@
 using EldritchGames.EldritchLogger.Console.Arguments;
+using EldritchGames.EldritchLogger.Console.Execution;
 using EldritchGames.EldritchLogger.Console.Output;
 using EldritchGames.EldritchLogger.Console.Registry;
 using System;
@@ -32,7 +33,7 @@ namespace EldritchGames.EldritchLogger.Console.Commands.BuiltIn
             if (name != null)
             {
                 if (registry.TryGet(name, out var command))
-                    Describe(context.Output, command.Descriptor, detailed: true);
+                    Describe(context.Output, command, detailed: true);
                 else
                     context.Output.Warn($"Unknown command '{name}'.");
                 return;
@@ -40,12 +41,14 @@ namespace EldritchGames.EldritchLogger.Console.Commands.BuiltIn
 
             context.Output.Info("Available commands:");
             foreach (var command in registry.All.OrderBy(c => c.Descriptor.Name, StringComparer.OrdinalIgnoreCase))
-                Describe(context.Output, command.Descriptor, detailed: false);
+                Describe(context.Output, command, detailed: false);
         }
 
-        private static void Describe(IConsoleOutput output, CommandDescriptor descriptor, bool detailed)
+        private static void Describe(IConsoleOutput output, ICommand command, bool detailed)
         {
-            output.Info($"{descriptor.Usage} - {descriptor.Description}");
+            var descriptor = command.Descriptor;
+            var cheat = CheatCommands.IsCheat(command) ? " [cheat]" : string.Empty;
+            output.Info($"{descriptor.Usage} - {descriptor.Description}{cheat}");
             if (!detailed) return;
 
             if (descriptor.Aliases.Count > 0)

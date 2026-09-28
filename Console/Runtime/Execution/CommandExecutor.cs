@@ -39,6 +39,14 @@ namespace EldritchGames.EldritchLogger.Console.Execution
         private readonly CommandHistory history;
         private readonly IConsoleOutput output;
         private readonly ICommandRunner runner;
+        private ICheatPolicy cheatPolicy = FixedCheatPolicy.Allow;
+
+        /// <summary>Decides whether cheat commands may run. Defaults to allowing them.</summary>
+        public ICheatPolicy CheatPolicy
+        {
+            get => cheatPolicy;
+            set => cheatPolicy = value ?? FixedCheatPolicy.Allow;
+        }
 
         public CommandExecutor(ICommandRegistry registry,
                                Lexer lexer,
@@ -79,6 +87,12 @@ namespace EldritchGames.EldritchLogger.Console.Execution
             if (!registry.TryGet(command.Name, out var target))
             {
                 output.Warn($"Unknown command: {command.Name}. Type 'help' to list commands.");
+                return ExecutionStatus.Failed;
+            }
+
+            if (CheatCommands.IsCheat(target) && !CheatPolicy.CheatsAllowed)
+            {
+                output.Warn($"'{command.Name}' is a cheat and cheats are disabled.");
                 return ExecutionStatus.Failed;
             }
 

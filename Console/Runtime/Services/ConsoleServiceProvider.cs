@@ -61,6 +61,27 @@ namespace EldritchGames.EldritchLogger.Console.Services
             return false;
         }
 
+        /// <summary>
+        /// Edit-time check: the dependencies of <paramref name="type"/> that none of its public constructors
+        /// can get from <paramref name="availableServices"/>. Empty when some constructor is satisfiable.
+        /// </summary>
+        public static IReadOnlyList<Type> FindMissingDependencies(Type type, ICollection<Type> availableServices)
+        {
+            IReadOnlyList<Type> fewestMissing = null;
+            foreach (var ctor in type.GetConstructors().OrderByDescending(c => c.GetParameters().Length))
+            {
+                var missing = ctor.GetParameters()
+                    .Where(p => !p.HasDefaultValue && !availableServices.Contains(p.ParameterType))
+                    .Select(p => p.ParameterType)
+                    .ToArray();
+                if (missing.Length == 0) return Array.Empty<Type>();
+                if (fewestMissing == null || missing.Length < fewestMissing.Count) fewestMissing = missing;
+            }
+            return fewestMissing ?? new[] { typeof(void) }; // no public constructor
+        }
+
+        public IReadOnlyCollection<Type> RegisteredTypes => services.Keys;
+
         private bool TryResolveArguments(ConstructorInfo ctor, out object[] args, out string unresolved)
         {
             var parameters = ctor.GetParameters();
