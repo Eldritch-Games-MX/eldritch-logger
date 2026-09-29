@@ -1,7 +1,11 @@
+using EldritchGames.EldritchLogger.Dto;
+using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Sinks.Network;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Threading;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Sinks.Config
@@ -48,8 +52,7 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
             return new HttpLogSink(
                 endpoint,
                 format,
-                headers.Where(h => !string.IsNullOrWhiteSpace(h.name))
-                       .Select(h => new KeyValuePair<string, string>(h.name, h.value)),
+                Headers(),
                 minimumLevel,
                 new BatchingOptions
                 {
@@ -60,5 +63,49 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
                 },
                 TimeSpan.FromSeconds(requestTimeoutSeconds));
         }
+
+        public override string Preview(LogEntryDto sample, LogSettings settings) =>
+            HttpLogSink.Serialize(new[] { sample }, format).TrimEnd('\n');
+
+        /// <summary>
+        /// Posts <paramref name="entry"/> once with the current settings (no batching, no retries) and describes the
+        /// result, e.g. <c>"200 OK"</c>, <c>"401 Unauthorized"</c> or <c>"Timed out after 10s"</c>. Blocks: call it
+        /// off the main thread. Used by the inspector's "Send Test Entry" button.
+        /// </summary>
+        public bool TrySendTest(LogEntryDto entry, out string result) => TrySendTest(entry, null, out result);
+
+        internal bool TrySendTest(LogEntryDto entry, HttpMessageHandler handler, out string result)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var endpoint) ||
+                (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps))
+            {
+                result = $"Invalid URL '{url}': it must be an absolute http(s) URL.";
+                return false;
+            }
+
+            using var client = handler != null ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds);
+            try
+            {
+                var outcome = HttpLogSink.Send(client, endpoint, format, Headers(), new[] { entry }, CancellationToken.None);
+                result = outcome.Description;
+                return outcome.Result == SendResult.Success;
+            }
+            catch (Exception ex) when (ex is OperationCanceledException)
+            {
+                result = $"Timed out after {requestTimeoutSeconds:0.#}s.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                result = ex.GetBaseException().Message;
+                return false;
+            }
+        }
+
+        private KeyValuePair<string, string>[] Headers() =>
+            headers.Where(h => !string.IsNullOrWhiteSpace(h.name))
+                   .Select(h => new KeyValuePair<string, string>(h.name, h.value))
+                   .ToArray();
     }
 }

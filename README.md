@@ -38,8 +38,11 @@ code.
   commands from plain methods (`[ConsoleMethod]`) and console variables
   (`[ConsoleVariable]`); `log.*` commands; cheat gating; stripped from release
   builds by default
-- **Editor tooling**: Log Viewer, Console Commands window, Project Settings,
-  category code generation, and Roslyn analyzers ELG001–ELG005
+- **Editor tooling**: Log Viewer (grouping by template, property filters,
+  clickable stack traces, live file tail), Logger Control window, Console
+  Commands window with a console-variable watch, sink output previews and an
+  HTTP test button, category code generation and unused-category search, and
+  Roslyn analyzers ELG001–ELG006 with quick fixes
 
 ## Installation
 

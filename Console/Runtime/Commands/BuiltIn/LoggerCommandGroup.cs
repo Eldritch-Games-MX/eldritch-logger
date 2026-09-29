@@ -108,10 +108,7 @@ namespace EldritchGames.EldritchLogger.Console.Commands.BuiltIn
             context.Output.Info($"Minimum level: {logControl.MinimumLevel}{note}");
 
             // The logger also drops entries that no sink accepts, whatever the filter says.
-            var all = sinks()?.All;
-            if (all == null || all.Count == 0) return;
-            var lowestSink = all.Min(s => s.MinimumLevel);
-            if (lowestSink > logControl.MinimumLevel)
+            if (sinks().LevelHiddenBySinks(logControl.MinimumLevel) is { } lowestSink)
                 context.Output.Warn($"No sink accepts entries below {lowestSink}, so {logControl.MinimumLevel} entries are still discarded. " +
                                     "Lower a sink's minimum level in the LogSettings asset.");
         }

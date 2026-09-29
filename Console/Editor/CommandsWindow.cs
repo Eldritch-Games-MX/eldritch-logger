@@ -1,4 +1,5 @@
 using EldritchGames.EldritchLogger.Console.Commands;
+using EldritchGames.EldritchLogger.Console.Commands.Reflection;
 using EldritchGames.EldritchLogger.Console.Execution;
 using EldritchGames.EldritchLogger.Console.Services;
 using EldritchGames.EldritchLogger.Console.UI;
@@ -11,9 +12,10 @@ using UnityEngine;
 namespace EldritchGames.EldritchLogger.Console.EditorTools
 {
     /// <summary>
-    /// Lists console commands. In Play Mode: the live registry (usage, aliases, source, cheats),
-    /// skipped types and name conflicts, plus a box to run commands. In Edit Mode: every discovered
-    /// command group and attributed command, with the constructor dependencies the console will not provide.
+    /// Lists console commands. In Play Mode: the live registry (usage, aliases, source, cheats), skipped types and
+    /// name conflicts, a box to run commands, the recent command history, and a watch panel for console variables.
+    /// In Edit Mode: every discovered command group and attributed command, with the constructor dependencies the
+    /// console will not provide, and every [ConsoleMethod]/[ConsoleVariable] member with the reason it would be skipped.
     /// </summary>
     public sealed class CommandsWindow : EditorWindow
     {
@@ -21,6 +23,8 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
         private string search = string.Empty;
         private string commandLine = string.Empty;
         private int selectedConsole;
+        private bool showHistory = true;
+        private bool showVariables = true;
 
         private static GUIStyle wrapStyle;
         private static GUIStyle WrapStyle => wrapStyle ??= new GUIStyle(EditorStyles.label) { wordWrap = true, richText = true };
@@ -68,6 +72,8 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
             var console = consoles[Mathf.Clamp(selectedConsole, 0, consoles.Length - 1)];
 
             DrawRunBox(console);
+            DrawHistory(console);
+            DrawVariables(console);
             DrawReport(console.Discovery);
 
             EditorGUILayout.Space();
@@ -116,6 +122,92 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
             EditorGUILayout.LabelField("Output appears in the in-game console.", EditorStyles.miniLabel);
         }
 
+        private void DrawHistory(ConsoleBootstrap console)
+        {
+            var history = console.Services?.Get<CommandHistory>();
+            if (history == null || history.Count == 0) return;
+
+            EditorGUILayout.Space();
+            showHistory = EditorGUILayout.Foldout(showHistory, $"History ({history.Count})", true);
+            if (!showHistory) return;
+
+            foreach (var entry in history.GetLast(10).Reverse())
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.SelectableLabel(entry, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                    if (GUILayout.Button(new GUIContent("Edit", "Copy into the run box"), GUILayout.Width(40))) commandLine = entry;
+                    if (GUILayout.Button("Run", GUILayout.Width(40))) console.Executor.Execute(entry);
+                }
+            }
+        }
+
+        /// <summary>Live values of [ConsoleVariable] members, edited through the executor so ranges, read-only and cheats apply.</summary>
+        private void DrawVariables(ConsoleBootstrap console)
+        {
+            var variables = console.Registry.All.OfType<VariableCommand>()
+                .Where(v => MatchesSearch(v.Descriptor.Name, v.Description))
+                .OrderBy(v => v.Descriptor.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (variables.Count == 0) return;
+
+            EditorGUILayout.Space();
+            showVariables = EditorGUILayout.Foldout(showVariables, $"Console Variables ({variables.Count})", true);
+            if (!showVariables) return;
+
+            bool cheatsAllowed = console.Services?.Get<ICheatPolicy>()?.CheatsAllowed ?? false;
+            foreach (var variable in variables)
+            {
+                object value;
+                try
+                {
+                    value = variable.Value;
+                }
+                catch (Exception ex)
+                {
+                    EditorGUILayout.LabelField(variable.Descriptor.Name, $"<error: {ex.GetBaseException().Message}>");
+                    continue;
+                }
+
+                bool locked = !variable.CanWrite || (variable.IsCheat && !cheatsAllowed);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var label = new GUIContent(variable.Descriptor.Name, variable.Description);
+                    using (new EditorGUI.DisabledScope(locked))
+                        DrawVariableEditor(console, variable, label, value);
+
+                    if (!variable.CanWrite) GUILayout.Label("read-only", EditorStyles.miniLabel, GUILayout.Width(70));
+                    else if (variable.IsCheat) GUILayout.Label(cheatsAllowed ? "cheat" : "cheat (off)", EditorStyles.miniLabel, GUILayout.Width(70));
+                }
+            }
+        }
+
+        private static void DrawVariableEditor(ConsoleBootstrap console, VariableCommand variable, GUIContent label, object value)
+        {
+            var name = variable.Descriptor.Name;
+            if (variable.ValueType == typeof(bool))
+            {
+                bool current = value is true;
+                bool next = EditorGUILayout.Toggle(label, current);
+                if (next != current) console.Executor.Execute($"{name} {(next ? "true" : "false")}");
+            }
+            else if (variable.ValueType.IsEnum && value is Enum current)
+            {
+                var next = EditorGUILayout.EnumPopup(label, current);
+                if (!Equals(next, current)) console.Executor.Execute($"{name} {next}");
+            }
+            else
+            {
+                var text = ArgumentTypeResolver.Format(value);
+                var edited = EditorGUILayout.DelayedTextField(label, text);
+                if (edited != text) console.Executor.Execute($"{name} {Quote(edited)}");
+            }
+        }
+
+        /// <summary>Quotes a value with spaces so it reaches the variable as one argument.</summary>
+        private static string Quote(string value) =>
+            value.IndexOf(' ') >= 0 ? "\"" + value.Replace("\"", "\\\"") + "\"" : value;
+
         private static void DrawReport(DiscoveryReport report)
         {
             if (report == null) return;
@@ -149,6 +241,43 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
             var available = new HashSet<Type>(ConsoleBootstrap.DefaultServiceTypes);
             DrawTypes("Command Groups", CommandDiscovery.GroupTypes, available);
             DrawTypes("[ConsoleCommand] Commands", CommandDiscovery.CommandTypes, available);
+            DrawMembers();
+        }
+
+        private void DrawMembers()
+        {
+            var inspections = CommandDiscovery.CommandMembers.Select(CommandDiscovery.Inspect)
+                .OrderBy(i => i.Command == null ? 0 : 1) // problems first
+                .ThenBy(i => i.MemberDescription, StringComparer.Ordinal)
+                .ToList();
+
+            EditorGUILayout.Space();
+            int skipped = inspections.Count(i => i.Command == null);
+            EditorGUILayout.LabelField($"[ConsoleMethod] / [ConsoleVariable] Members ({inspections.Count}{(skipped > 0 ? $", {skipped} skipped" : "")})", EditorStyles.boldLabel);
+
+            foreach (var inspection in inspections)
+            {
+                var usage = inspection.Command?.Descriptor.Usage;
+                if (!MatchesSearch(inspection.MemberDescription, usage, inspection.SkipReason)) continue;
+
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                {
+                    var icon = EditorGUIUtility.IconContent(inspection.Command != null ? "TestPassed" : "console.warnicon.sml");
+                    GUILayout.Label(icon, GUILayout.Width(18));
+
+                    var kind = inspection.Command is VariableCommand ? "variable" : "method";
+                    var text = inspection.Command != null
+                        ? $"<b>{usage}</b>   <color=#9E9E9E>{kind} · {inspection.MemberDescription}</color>"
+                        : $"<b>{inspection.MemberDescription}</b>\n{inspection.SkipReason}";
+                    if (inspection.Command != null && CheatCommands.IsCheat(inspection.Command)) text += "   [cheat]";
+                    GUILayout.Label(text, WrapStyle);
+
+                    var script = inspection.DeclaringType != null ? FindScript(inspection.DeclaringType) : null;
+                    using (new EditorGUI.DisabledScope(script == null))
+                        if (GUILayout.Button("Open", GUILayout.Width(50)))
+                            AssetDatabase.OpenAsset(script);
+                }
+            }
         }
 
         private void DrawTypes(string title, IReadOnlyList<Type> types, HashSet<Type> available)

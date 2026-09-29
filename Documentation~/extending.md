@@ -35,7 +35,10 @@ For a network or other slow destination, derive from `BatchingLogSink`. It
 provides a background thread, batching by size and interval, a bounded queue
 and `Flush`. Implement `SendBatch` and return `SendResult.Success`, `Retry`
 (retried with backoff) or `Reject` (dropped and counted), plus `Location` for
-diagnostics.
+diagnostics. `QueuedCount`, `SentCount`, `RetryCount` and `LastError` are
+shown by the inspector and the Logger Control window; call
+`ReportSendFailure(detail)` from `SendBatch` to give `LastError` a readable
+reason.
 
 For a file format, derive from `FileLogSink` and implement `Serialize` (plus
 `Header` and `Footer` if the format needs them). Ordering, the background
@@ -53,6 +56,9 @@ public sealed class AnalyticsSinkConfig : LogSinkConfig
     public override ILogSink CreateSink(SinkBuildContext context) => new AnalyticsSink();
 }
 ```
+
+Override `Preview(LogEntryDto sample, LogSettings settings)` to show the sink's
+output format in the inspector's **Output Preview**.
 
 Or attach a sink at runtime: `ELoggerFactory.Sinks?.AddSink(sink)`.
 

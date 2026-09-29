@@ -68,5 +68,16 @@ namespace EldritchGames.EldritchLogger.Tests
             collection.AddSink(new RecordingSink(LogLevel.Info));
             Assert.That(collection.LowestMinimumLevel, Is.EqualTo(LogLevel.Info));
         }
+
+        [Test]
+        public void LevelHiddenBySinks_IsTheLowestSinkLevel_WhenItIsAboveTheRequestedOne()
+        {
+            var collection = new SinkCollection(new ILogSink[] { new RecordingSink(LogLevel.Warning), new RecordingSink(LogLevel.Info) });
+
+            Assert.That(collection.LevelHiddenBySinks(LogLevel.Debug), Is.EqualTo(LogLevel.Info));
+            Assert.That(collection.LevelHiddenBySinks(LogLevel.Info), Is.Null);
+            Assert.That(new SinkCollection().LevelHiddenBySinks(LogLevel.Debug), Is.Null, "no sinks: nothing to report");
+            Assert.That(((ISinkRegistry)null).LevelHiddenBySinks(LogLevel.Debug), Is.Null);
+        }
     }
 }

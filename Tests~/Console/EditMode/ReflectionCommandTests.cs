@@ -301,5 +301,20 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
         {
             Assert.That(CommandDiscovery.CommandMembers.Any(m => m.DeclaringType == typeof(Commands)), Is.False);
         }
+
+        [Test]
+        public void Inspect_BuildsTheCommand_OrExplainsTheSkip()
+        {
+            var good = CommandDiscovery.Inspect(typeof(Commands).GetMethod("Add"));
+            Assert.That(good.Command, Is.Not.Null);
+            Assert.That(good.Command.Descriptor.Name, Is.EqualTo("add"));
+            Assert.That(good.SkipReason, Is.Null);
+            Assert.That(good.MemberDescription, Is.EqualTo("Commands.Add"));
+
+            var bad = CommandDiscovery.Inspect(typeof(Commands).GetMethod("Bad"));
+            Assert.That(bad.Command, Is.Null);
+            Assert.That(bad.SkipReason, Does.StartWith("Skipped Commands.Bad:"));
+            Assert.That(bad.DeclaringType, Is.EqualTo(typeof(Commands)));
+        }
     }
 }

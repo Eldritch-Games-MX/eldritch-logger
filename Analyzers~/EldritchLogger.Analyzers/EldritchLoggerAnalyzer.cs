@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
@@ -14,6 +15,7 @@ namespace EldritchLogger.Analyzers
     /// ELG003: A MonoBehaviour field initialized with ELoggerFactory.GetLogger (runs before the logger exists).
     /// ELG004: A message template built with interpolation/concatenation (loses the structured properties).
     /// ELG005: A log scope kept open across a coroutine yield (it leaks to unrelated main-thread logs).
+    /// ELG006: A message template whose holes and arguments don't line up (missing or extra arguments, repeated names).
     /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class EldritchLoggerAnalyzer : DiagnosticAnalyzer
@@ -62,10 +64,20 @@ namespace EldritchLogger.Analyzers
             Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
             description: "Unity resumes coroutines from native code without restoring the execution context. A scope opened before a yield stays active on the main thread while the coroutine is suspended.");
 
+        public static readonly DiagnosticDescriptor TemplateArgumentMismatch = new(
+            "ELG006",
+            "Message template holes and arguments don't match",
+            "{0}",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            description: "Holes are filled from the arguments in order. A hole without an argument is shown as written, an extra argument is " +
+                         "ignored (except a trailing exception, which becomes the entry's exception), and a repeated hole name is recorded " +
+                         "under a suffixed name.");
+
         private const string LogScopeType = LoggerNamespace + ".Pipeline.LogScope";
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(UseLogger, GuardExpensiveDebugMessage, LoggerInFieldInitializer, InterpolatedTemplate, ScopeAcrossYield);
+            ImmutableArray.Create(UseLogger, GuardExpensiveDebugMessage, LoggerInFieldInitializer, InterpolatedTemplate, ScopeAcrossYield,
+                                  TemplateArgumentMismatch);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -159,9 +171,14 @@ namespace EldritchLogger.Analyzers
             {
                 var cost = DescribeCost(context, template);
                 if (cost != null)
+                {
                     context.ReportDiagnostic(Diagnostic.Create(InterpolatedTemplate, template.GetLocation(), cost));
+                }
                 else
+                {
                     CheckDebugTemplate(context, invocation, method, containingType, template);
+                    CheckTemplateArguments(context, invocation, template);
+                }
                 return;
             }
 
@@ -275,6 +292,76 @@ namespace EldritchLogger.Analyzers
             bool boxes = values.Any(v => context.SemanticModel.GetTypeInfo(v, context.CancellationToken).Type?.IsValueType == true);
             var cost = boxes ? "a params array and boxed arguments" : "a params array";
             context.ReportDiagnostic(Diagnostic.Create(GuardExpensiveDebugMessage, template.GetLocation(), cost));
+        }
+
+        /// <summary>ELG006: compares a constant template's holes with the arguments that follow it.</summary>
+        private static void CheckTemplateArguments(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, ExpressionSyntax template)
+        {
+            if (!(context.SemanticModel.GetConstantValue(template, context.CancellationToken).Value is string text)) return;
+
+            var args = invocation.ArgumentList.Arguments;
+            int templateIndex = -1;
+            for (int i = 0; i < args.Count; i++)
+                if (args[i].Expression == template) templateIndex = i;
+            if (templateIndex < 0) return;
+
+            var values = args.Skip(templateIndex + 1).ToList();
+            if (values.Any(a => a.NameColon != null)) return; // named arguments: the params array is built elsewhere
+            if (values.Count == 1 && context.SemanticModel.GetTypeInfo(values[0].Expression, context.CancellationToken).Type is IArrayTypeSymbol)
+                return; // an existing object[]: its length is unknown here
+
+            var holes = TemplateHoles(text);
+            var location = template.GetLocation();
+
+            var repeated = holes.GroupBy(h => h).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            if (repeated.Count > 0)
+                context.ReportDiagnostic(Diagnostic.Create(TemplateArgumentMismatch, location,
+                    $"Hole name{(repeated.Count > 1 ? "s" : "")} {string.Join(", ", repeated.Select(n => "'" + n + "'"))} repeated: " +
+                    "each repeat is recorded under a suffixed name (Name_2); give every hole its own name"));
+
+            int extra = values.Count - holes.Count;
+            if (extra < 0)
+            {
+                var missing = holes.Skip(values.Count).Select(n => "{" + n + "}");
+                context.ReportDiagnostic(Diagnostic.Create(TemplateArgumentMismatch, location,
+                    $"The template has {holes.Count} hole(s) but {values.Count} argument(s): {string.Join(", ", missing)} will be shown as written"));
+            }
+            else if (extra > 0 && !(extra == 1 && IsException(context, values[values.Count - 1].Expression)))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(TemplateArgumentMismatch, location,
+                    $"The template has {holes.Count} hole(s) but {values.Count} argument(s): the last {extra} will be ignored"));
+            }
+        }
+
+        private static bool IsException(SyntaxNodeAnalysisContext context, ExpressionSyntax expression)
+        {
+            for (var type = context.SemanticModel.GetTypeInfo(expression, context.CancellationToken).Type; type != null; type = type.BaseType)
+                if (type.ToDisplayString() == "System.Exception") return true;
+            return false;
+        }
+
+        /// <summary>Hole names in order, parsed the way the logger's <c>MessageTemplate</c> does.</summary>
+        internal static List<string> TemplateHoles(string text)
+        {
+            var holes = new List<string>();
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if ((c == '{' || c == '}') && i + 1 < text.Length && text[i + 1] == c) { i++; continue; } // {{ or }}
+                if (c != '{') continue;
+
+                int close = text.IndexOf('}', i + 1);
+                if (close < 0) break;
+                var inner = text.Substring(i + 1, close - i - 1);
+                int colon = inner.IndexOf(':');
+                var name = (colon >= 0 ? inner.Substring(0, colon) : inner).Trim().TrimStart('@', '$');
+                if (name.Length > 0 && name.All(ch => char.IsLetterOrDigit(ch) || ch == '_'))
+                {
+                    holes.Add(name);
+                    i = close;
+                }
+            }
+            return holes;
         }
 
         private static bool ChainStartsAtDebug(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation)

@@ -16,4 +16,22 @@ namespace EldritchGames.EldritchLogger.Core
         /// <summary>The sinks currently attached (a snapshot).</summary>
         System.Collections.Generic.IReadOnlyList<ILogSink> All { get; }
     }
+
+    public static class SinkRegistryExtensions
+    {
+        /// <summary>
+        /// When no sink accepts <paramref name="level"/> (every sink's minimum level is higher), the lowest level a
+        /// sink does accept; otherwise null. Entries below it are discarded whatever the filter allows.
+        /// </summary>
+        public static LogLevel? LevelHiddenBySinks(this ISinkRegistry registry, LogLevel level)
+        {
+            var sinks = registry?.All;
+            if (sinks == null || sinks.Count == 0) return null;
+
+            var lowest = LogLevel.Critical;
+            foreach (var sink in sinks)
+                if (sink.MinimumLevel < lowest) lowest = sink.MinimumLevel;
+            return lowest > level ? lowest : null;
+        }
+    }
 }

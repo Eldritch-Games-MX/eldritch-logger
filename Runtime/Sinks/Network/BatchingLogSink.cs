@@ -53,6 +53,10 @@ namespace EldritchGames.EldritchLogger.Sinks.Network
         private long accepted;    // taken by Emit
         private long completed;   // delivered, rejected, or dropped
         private long flushTarget; // the worker sends partial batches until completed reaches this
+        private long sent;
+        private long retries;
+        private string lastError;
+        private long lastErrorTicks;
         private int disposed;
         private static int runningWorkers;
 
@@ -65,6 +69,35 @@ namespace EldritchGames.EldritchLogger.Sinks.Network
 
         /// <summary>Where entries are sent (shown by editor tooling).</summary>
         public abstract string Location { get; }
+
+        /// <summary>Entries accepted and not yet sent or dropped.</summary>
+        public long QueuedCount => Math.Max(0, Interlocked.Read(ref accepted) - Interlocked.Read(ref completed));
+
+        /// <summary>Entries delivered successfully.</summary>
+        public long SentCount => Interlocked.Read(ref sent);
+
+        /// <summary>Send attempts that failed and were retried.</summary>
+        public long RetryCount => Interlocked.Read(ref retries);
+
+        /// <summary>The most recent send failure (status or exception), or null if none happened.</summary>
+        public string LastError => Volatile.Read(ref lastError);
+
+        /// <summary>When <see cref="LastError"/> happened (UTC), or null.</summary>
+        public DateTime? LastErrorUtc
+        {
+            get
+            {
+                long ticks = Interlocked.Read(ref lastErrorTicks);
+                return ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
+            }
+        }
+
+        /// <summary>Records why the current send failed; shown by <see cref="LastError"/>. Called from <see cref="SendBatch"/>.</summary>
+        protected void ReportSendFailure(string detail)
+        {
+            Volatile.Write(ref lastError, detail);
+            Interlocked.Exchange(ref lastErrorTicks, DateTime.UtcNow.Ticks);
+        }
 
         protected BatchingLogSink(string name, LogLevel minimumLevel, BatchingOptions options = null)
         {
@@ -193,9 +226,14 @@ namespace EldritchGames.EldritchLogger.Sinks.Network
                     {
                         result = SendResult.Retry;
                         error = ex;
+                        ReportSendFailure($"{ex.GetType().Name}: {ex.GetBaseException().Message}");
                     }
 
-                    if (result == SendResult.Success) return;
+                    if (result == SendResult.Success)
+                    {
+                        Interlocked.Add(ref sent, batch.Count);
+                        return;
+                    }
 
                     bool giveUp = result == SendResult.Reject || attempt >= options.MaxRetries || disposing.IsCancellationRequested;
                     if (giveUp)
@@ -205,6 +243,7 @@ namespace EldritchGames.EldritchLogger.Sinks.Network
                         return;
                     }
 
+                    Interlocked.Increment(ref retries);
                     var delay = TimeSpan.FromMilliseconds(options.RetryBaseDelay.TotalMilliseconds * Math.Pow(2, attempt));
                     disposing.Token.WaitHandle.WaitOne(delay);
                 }

@@ -167,5 +167,38 @@ namespace EldritchGames.EldritchLogger.Tests
 
             Assert.That(BatchingLogSink.RunningWorkers, Is.EqualTo(before));
         }
+
+        [Test]
+        public void Failures_AreRecordedAsLastError_WithTheStatus()
+        {
+            var handler = new FakeHandler(HttpStatusCode.ServiceUnavailable);
+            using var sink = new HttpLogSink(Endpoint, handler: handler, options: FastOptions());
+
+            sink.Emit(new LogEntryDto { Message = "m" });
+            sink.Flush();
+
+            Assert.That(sink.SentCount, Is.EqualTo(1), "sent on the retry");
+            Assert.That(sink.RetryCount, Is.EqualTo(1));
+            Assert.That(sink.LastError, Is.EqualTo("503 Service Unavailable"));
+            Assert.That(sink.LastErrorUtc, Is.Not.Null);
+            Assert.That(sink.QueuedCount, Is.Zero);
+        }
+
+        [Test]
+        public void ConfigTestSend_ReportsTheStatus_AndRejectsBadUrls()
+        {
+            var entry = new LogEntryDto { Message = "test", Timestamp = DateTime.UtcNow };
+            var config = new Sinks.Config.HttpSinkConfig { url = Endpoint.ToString() };
+
+            Assert.That(config.TrySendTest(entry, new FakeHandler(HttpStatusCode.OK), out var ok), Is.True);
+            Assert.That(ok, Is.EqualTo("200 OK"));
+
+            Assert.That(config.TrySendTest(entry, new FakeHandler(HttpStatusCode.Unauthorized), out var denied), Is.False);
+            Assert.That(denied, Is.EqualTo("401 Unauthorized"));
+
+            config.url = "ftp://nope";
+            Assert.That(config.TrySendTest(entry, new FakeHandler(), out var invalid), Is.False);
+            Assert.That(invalid, Does.StartWith("Invalid URL"));
+        }
     }
 }

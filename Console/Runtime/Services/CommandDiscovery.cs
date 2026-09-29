@@ -117,28 +117,67 @@ namespace EldritchGames.EldritchLogger.Console.Services
 
             foreach (var member in members ?? Array.Empty<MemberInfo>())
             {
-                ICommand command;
-                try
+                var inspection = Inspect(member);
+                if (inspection.Command == null)
                 {
-                    command = member is MethodInfo method
-                        ? Commands.Reflection.ReflectionCommands.FromMethod(method)
-                        : Commands.Reflection.ReflectionCommands.FromMember(member);
-                }
-                catch (Exception ex)
-                {
-                    // Any failure (unsupported signature, a type from a missing assembly, a malformed attribute)
-                    // skips this member only; the rest of discovery continues.
-                    var reason = ex is NotSupportedException || ex is ArgumentException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
-                    Skip(report, SafeDeclaringType(member), $"Skipped {SafeDeclaringType(member)?.Name}.{SafeName(member)}: {reason}");
+                    Skip(report, inspection.DeclaringType, inspection.SkipReason);
                     continue;
                 }
 
-                tracking.Source = member.DeclaringType;
-                tracking.Register(command);
+                tracking.Source = inspection.DeclaringType;
+                tracking.Register(inspection.Command);
             }
 
             tracking.Source = null;
             return report;
+        }
+
+        /// <summary>What discovery makes of one attributed member: its command, or why it is skipped.</summary>
+        public readonly struct MemberInspection
+        {
+            public MemberInfo Member { get; }
+
+            /// <summary>Null when the member cannot be declared (see <see cref="MemberDescription"/>).</summary>
+            public Type DeclaringType { get; }
+
+            /// <summary><c>Type.Member</c>, safe to show even for members whose metadata cannot be read.</summary>
+            public string MemberDescription { get; }
+
+            /// <summary>The command the member becomes, or null when it is skipped.</summary>
+            public ICommand Command { get; }
+
+            public string SkipReason { get; }
+
+            public MemberInspection(MemberInfo member, Type declaringType, string description, ICommand command, string skipReason)
+            {
+                Member = member;
+                DeclaringType = declaringType;
+                MemberDescription = description;
+                Command = command;
+                SkipReason = skipReason;
+            }
+        }
+
+        /// <summary>
+        /// Builds the command for an attributed member without registering it, or explains why it would be skipped.
+        /// Any failure (unsupported signature, a type from a missing assembly, a malformed attribute) is caught.
+        /// </summary>
+        public static MemberInspection Inspect(MemberInfo member)
+        {
+            var declaringType = SafeDeclaringType(member);
+            var description = $"{declaringType?.Name}.{SafeName(member)}";
+            try
+            {
+                var command = member is MethodInfo method
+                    ? Commands.Reflection.ReflectionCommands.FromMethod(method)
+                    : Commands.Reflection.ReflectionCommands.FromMember(member);
+                return new MemberInspection(member, declaringType, description, command, null);
+            }
+            catch (Exception ex)
+            {
+                var reason = ex is NotSupportedException || ex is ArgumentException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
+                return new MemberInspection(member, declaringType, description, null, $"Skipped {description}: {reason}");
+            }
         }
 
         /// <summary>The <c>[ConsoleMethod]</c> methods and <c>[ConsoleVariable]</c> fields/properties declared on <paramref name="type"/>.</summary>

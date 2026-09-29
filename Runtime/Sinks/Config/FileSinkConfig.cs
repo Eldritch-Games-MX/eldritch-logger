@@ -50,6 +50,9 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
         public override string DisplayName => "Text File";
         protected override string Extension => ".txt";
 
+        public override string Preview(Dto.LogEntryDto sample, Settings.LogSettings settings) =>
+            new Formatting.TextLogFormatter(settings, richText: false).Format(sample);
+
         protected override ILogSink CreateFileSink(string path, SinkBuildContext context) =>
             new TextFileSink(path, new Formatting.TextLogFormatter(context.Settings, richText: false),
                              minimumLevel, queueCapacity);
@@ -61,6 +64,8 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
         public override string DisplayName => "JSON Lines File";
         protected override string Extension => ".jsonl";
 
+        public override string Preview(Dto.LogEntryDto sample, Settings.LogSettings settings) => Dto.LogJson.Serialize(sample);
+
         protected override ILogSink CreateFileSink(string path, SinkBuildContext context) =>
             new JsonLinesFileSink(path, minimumLevel, queueCapacity);
     }
@@ -70,6 +75,8 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
     {
         public override string DisplayName => "XML File";
         protected override string Extension => ".xml";
+
+        public override string Preview(Dto.LogEntryDto sample, Settings.LogSettings settings) => XmlFileSink.Format(sample);
 
         protected override ILogSink CreateFileSink(string path, SinkBuildContext context) =>
             new XmlFileSink(path, minimumLevel, queueCapacity);

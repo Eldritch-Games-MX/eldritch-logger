@@ -52,26 +52,58 @@ namespace EldritchGames.EldritchLogger.Sinks.Network
 
         protected override SendResult SendBatch(IReadOnlyList<LogEntryDto> batch, CancellationToken cancellation)
         {
+            var outcome = Send(client, endpoint, format, headers, batch, cancellation);
+            if (outcome.Result != SendResult.Success) ReportSendFailure(outcome.Description);
+            if (outcome.Result == SendResult.Reject)
+                SelfLog.Report($"'{endpoint}' rejected a batch: {outcome.Description}");
+            return outcome.Result;
+        }
+
+        /// <summary>The result of one POST: how the batch should be treated, and a readable status.</summary>
+        public readonly struct SendOutcome
+        {
+            public SendResult Result { get; }
+            public int StatusCode { get; }
+
+            /// <summary>For example <c>"200 OK"</c> or <c>"401 Unauthorized"</c>.</summary>
+            public string Description { get; }
+
+            public SendOutcome(SendResult result, int statusCode, string description)
+            {
+                Result = result;
+                StatusCode = statusCode;
+                Description = description;
+            }
+        }
+
+        /// <summary>
+        /// Posts one batch with <paramref name="client"/>. Throws on network errors and timeouts; returns
+        /// <see cref="SendResult.Retry"/> for 5xx, 408 and 429, and <see cref="SendResult.Reject"/> for other 4xx.
+        /// </summary>
+        public static SendOutcome Send(HttpClient client, Uri endpoint, HttpPayloadFormat format,
+                                       IReadOnlyList<KeyValuePair<string, string>> headers,
+                                       IReadOnlyList<LogEntryDto> batch, CancellationToken cancellation)
+        {
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
                 Content = new StringContent(Serialize(batch, format), Encoding.UTF8, ContentType(format))
             };
-            foreach (var header in headers)
-                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            if (headers != null)
+                foreach (var header in headers)
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
             using var response = client.SendAsync(request, cancellation).GetAwaiter().GetResult();
-            if (response.IsSuccessStatusCode) return SendResult.Success;
-
             var status = (int)response.StatusCode;
+            var description = $"{status} {response.ReasonPhrase}";
+            if (response.IsSuccessStatusCode) return new SendOutcome(SendResult.Success, status, description);
+
             bool retryable = status >= 500 || status == 408 || status == 429;
-            if (!retryable)
-                SelfLog.Report($"'{endpoint}' rejected a batch: {status} {response.ReasonPhrase}");
-            return retryable ? SendResult.Retry : SendResult.Reject;
+            return new SendOutcome(retryable ? SendResult.Retry : SendResult.Reject, status, description);
         }
 
         protected override void DisposeResources() => client.Dispose();
 
-        private static Uri ValidateEndpoint(Uri endpoint)
+        internal static Uri ValidateEndpoint(Uri endpoint)
         {
             if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
             if (!endpoint.IsAbsoluteUri || (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps))

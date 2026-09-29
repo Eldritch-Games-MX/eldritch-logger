@@ -15,6 +15,11 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
 
         public override string DisplayName => "Unity Console";
 
+        public override string Preview(Dto.LogEntryDto sample, Settings.LogSettings settings) =>
+            new TextLogFormatter(settings, richText: true).Format(sample);
+
+        public override bool PreviewIsRichText => true;
+
         public override ILogSink CreateSink(SinkBuildContext context) =>
             new UnityConsoleSink(new TextLogFormatter(context.Settings, richText: true),
                                  minimumLevel, useContextObjects, suppressUnityStackTrace);

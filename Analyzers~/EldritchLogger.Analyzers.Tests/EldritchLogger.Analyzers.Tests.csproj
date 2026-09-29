@@ -9,8 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0" />
     <ProjectReference Include="..\EldritchLogger.Analyzers\EldritchLogger.Analyzers.csproj" />
+    <ProjectReference Include="..\EldritchLogger.Analyzers.CodeFixes\EldritchLogger.Analyzers.CodeFixes.csproj" />
   </ItemGroup>
 
 </Project>

@@ -25,12 +25,15 @@ namespace EldritchGames.EldritchLogger.Sinks.Files
 
         protected override string Footer => "</Logs>\n";
 
-        protected override string Serialize(LogEntryDto entry)
+        protected override string Serialize(LogEntryDto entry) => Format(entry) + "\n";
+
+        /// <summary>One <c>&lt;LogEntryDto&gt;</c> element, as written to the file.</summary>
+        public static string Format(LogEntryDto entry)
         {
             using var stringWriter = new StringWriter();
             using (var xmlWriter = XmlWriter.Create(stringWriter, WriterSettings))
                 Serializer.Serialize(xmlWriter, entry, NoNamespaces);
-            return stringWriter + "\n";
+            return stringWriter.ToString();
         }
 
         private static XmlSerializerNamespaces CreateNamespaces()

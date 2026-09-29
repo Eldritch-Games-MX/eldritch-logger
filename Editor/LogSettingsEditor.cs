@@ -7,9 +7,11 @@ using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Formatting;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Sinks.Config;
+using EldritchGames.EldritchLogger.Sinks.Network;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -30,6 +32,10 @@ namespace EldritchGames.EldritchLogger.EditorTools
         private bool showAdvanced;
         private string newCategoryName = "";
         private string addCategoryError = "";
+        private HashSet<string> unusedCategories;
+        private LogEntryDto sample;
+        private readonly HashSet<LogSinkConfig> previewOpen = new();
+        private readonly Dictionary<LogSinkConfig, Task<(bool ok, string result)>> httpTests = new();
 
         private void OnEnable()
         {
@@ -66,7 +72,15 @@ namespace EldritchGames.EldritchLogger.EditorTools
             DrawRunningSinks();
         }
 
-        public override bool RequiresConstantRepaint() => EditorApplication.isPlaying;
+        public override bool RequiresConstantRepaint() =>
+            EditorApplication.isPlaying || httpTests.Values.Any(t => !t.IsCompleted);
+
+        /// <summary>Built once (it runs a small logger), and again when the minimum level changes.</summary>
+        private LogEntryDto Sample(LogSettings settings)
+        {
+            if (sample == null || sample.Level != settings.minimumLevel) sample = SinkPreview.CreateSample(settings);
+            return sample;
+        }
 
         private static void DrawRunningSinks()
         {
@@ -93,11 +107,20 @@ namespace EldritchGames.EldritchLogger.EditorTools
                     var dropped = diagnostics.DroppedCount;
                     var style = dropped > 0 ? EditorStyles.boldLabel : EditorStyles.label;
                     EditorGUILayout.LabelField($"dropped: {dropped}", style, GUILayout.Width(100));
-                    if (!string.IsNullOrEmpty(diagnostics.Location) &&
+                    if (!string.IsNullOrEmpty(diagnostics.Location) && System.IO.File.Exists(diagnostics.Location) &&
                         GUILayout.Button(new GUIContent("Reveal", diagnostics.Location), GUILayout.Width(60)))
                         EditorUtility.RevealInFinder(diagnostics.Location);
                 }
                 EditorGUILayout.EndHorizontal();
+
+                if (sink is BatchingLogSink batching)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.LabelField($"queued {batching.QueuedCount} · sent {batching.SentCount} · retries {batching.RetryCount}", EditorStyles.miniLabel);
+                    if (batching.LastError != null)
+                        EditorGUILayout.HelpBox($"Last error ({batching.LastErrorUtc?.ToLocalTime():HH:mm:ss}): {batching.LastError}", MessageType.Warning);
+                    EditorGUI.indentLevel--;
+                }
             }
         }
 
@@ -134,6 +157,9 @@ namespace EldritchGames.EldritchLogger.EditorTools
                 EditorGUILayout.BeginHorizontal();
                 bool enabled = EditorGUILayout.ToggleLeft(entry.name, entry.enabled, GUILayout.Width(150));
                 Color color = settings.useCategoryColors ? EditorGUILayout.ColorField(entry.color) : entry.color;
+                if (unusedCategories != null && unusedCategories.Contains(entry.name))
+                    GUILayout.Label(new GUIContent("unused?", "No script under Assets/ mentions this category (as a string or generated field)."),
+                                    EditorStyles.miniButton, GUILayout.Width(60));
 
                 if (entry.IsBuiltIn)
                     GUILayout.Space(28);
@@ -197,6 +223,16 @@ namespace EldritchGames.EldritchLogger.EditorTools
                 EldritchLoggerSettingsProvider.Open();
             EditorGUILayout.EndHorizontal();
 
+            if (GUILayout.Button(new GUIContent("Find Unused Categories", "Search scripts under Assets/ for custom categories nobody logs to.")))
+                unusedCategories = new HashSet<string>(CategoryUsage.FindUnreferencedInProject(settings), StringComparer.OrdinalIgnoreCase);
+            if (unusedCategories != null)
+            {
+                var message = unusedCategories.Count == 0
+                    ? "Every custom category is mentioned by at least one script."
+                    : $"Not mentioned by any script: {string.Join(", ", unusedCategories)}. The search is textual (names built at runtime are not found), so check before removing.";
+                EditorGUILayout.HelpBox(message, unusedCategories.Count == 0 ? MessageType.Info : MessageType.Warning);
+            }
+
             if (!settings.categories.Any(c => c.enabled))
                 EditorGUILayout.HelpBox("No categories enabled. No logs will be output.", MessageType.Warning);
 
@@ -236,6 +272,8 @@ namespace EldritchGames.EldritchLogger.EditorTools
                             EditorGUILayout.PropertyField(child, true);
                         } while (child.NextVisible(false));
                     }
+                    if (config is HttpSinkConfig http) DrawHttpTest(http);
+                    DrawSinkPreview(config);
                     EditorGUI.indentLevel--;
                 }
                 EditorGUILayout.EndVertical();
@@ -248,6 +286,62 @@ namespace EldritchGames.EldritchLogger.EditorTools
                 ShowAddSinkMenu();
 
             EditorGUILayout.Space();
+        }
+
+        private void DrawSinkPreview(LogSinkConfig config)
+        {
+            var settings = (LogSettings)target;
+            string preview;
+            try
+            {
+                preview = config.Preview(Sample(settings), settings);
+            }
+            catch (Exception ex)
+            {
+                preview = $"(preview failed: {ex.Message})";
+            }
+            if (preview == null) return;
+
+            bool open = EditorGUILayout.Foldout(previewOpen.Contains(config), new GUIContent("Output Preview", "How a sample entry (template, scope and exception) is written by this sink."), true);
+            if (open) previewOpen.Add(config); else previewOpen.Remove(config);
+            if (!open) return;
+
+            if (config.PreviewIsRichText)
+            {
+                var style = new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true };
+                EditorGUILayout.LabelField(preview, style);
+            }
+            else
+            {
+                var style = new GUIStyle(EditorStyles.textArea) { wordWrap = true };
+                float height = style.CalcHeight(new GUIContent(preview), EditorGUIUtility.currentViewWidth - 60);
+                EditorGUILayout.SelectableLabel(preview, style, GUILayout.Height(Mathf.Min(height, 200)));
+            }
+        }
+
+        private void DrawHttpTest(HttpSinkConfig config)
+        {
+            httpTests.TryGetValue(config, out var test);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                using (new EditorGUI.DisabledScope(test != null && !test.IsCompleted))
+                {
+                    if (GUILayout.Button(new GUIContent("Send Test Entry", "Post the sample entry once with these settings, to check the URL and headers."), GUILayout.Width(130)))
+                    {
+                        var entry = Sample((LogSettings)target);
+                        httpTests[config] = Task.Run(() => (config.TrySendTest(entry, out var result), result));
+                    }
+                }
+
+                if (test == null) GUILayout.FlexibleSpace();
+                else if (!test.IsCompleted) GUILayout.Label("Sending…");
+                else
+                {
+                    var (ok, result) = test.Result;
+                    GUILayout.Label(new GUIContent((ok ? "✔ " : "✖ ") + result, result), ok ? EditorStyles.label : EditorStyles.boldLabel);
+                }
+            }
         }
 
         private void ShowAddSinkMenu()
@@ -311,13 +405,13 @@ namespace EldritchGames.EldritchLogger.EditorTools
             EditorGUILayout.Space();
         }
 
-        private static void DrawPreview(LogSettings settings)
+        private void DrawPreview(LogSettings settings)
         {
             EditorGUILayout.LabelField(new GUIContent("Preview", "A sample entry with the current settings."), EditorStyles.boldLabel);
 
-            string preview = new TextLogFormatter(settings, richText: true).Format(SampleDto(settings));
+            string preview = new TextLogFormatter(settings, richText: true).Format(Sample(settings));
             var style = new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true };
-            EditorGUILayout.LabelField(preview, style, GUILayout.Height(60));
+            EditorGUILayout.LabelField(preview, style);
         }
 
         private static void Modify(LogSettings settings, string undoName, Action<LogSettings> change)
@@ -327,15 +421,7 @@ namespace EldritchGames.EldritchLogger.EditorTools
             EditorUtility.SetDirty(settings);
         }
 
-        public static LogEntryDto SampleDto(LogSettings settings) =>
-            new()
-            {
-                Timestamp = DateTime.UtcNow,
-                Level = settings.minimumLevel,
-                Category = LogCategory.Gameplay.Name,
-                Message = "Sample log message",
-                Metadata = new List<MetadataEntry> { new() { Key = LogPropertyKeys.GameObject, Value = "PlayerPawn" } },
-                Exception = "InvalidOperationException: Preview exception message"
-            };
+        /// <summary>The sample entry shown by the previews (see <see cref="SinkPreview.CreateSample"/>).</summary>
+        public static LogEntryDto SampleDto(LogSettings settings) => SinkPreview.CreateSample(settings);
     }
 }

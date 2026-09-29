@@ -44,7 +44,7 @@ the code that logs.
 | Unity's own logs | `UnityLogForwarder` | Engine errors and uncaught exceptions reach your sinks too |
 | Runtime control | `ILogControl` | Level and category overrides that never touch the asset |
 | In-game console | `ConsoleBootstrap`, `IConsoleCommand`, `[ConsoleMethod]`, `[ConsoleVariable]` | Typed commands, autocomplete, history, themes, cheats, release stripping |
-| Editor tooling | Log Viewer, Console Commands window, Project Settings, code generation | Plus Roslyn analyzers ELG001–ELG005 |
+| Editor tooling | Log Viewer, Logger Control, Console Commands window, sink previews, code generation | Plus Roslyn analyzers ELG001–ELG006 with quick fixes |
 
 ## Non-goals
 
@@ -65,7 +65,7 @@ the code that logs.
 - `getting-started.md`: install, create the settings asset, log your first entries.
 - `logging.md`: levels, categories, the builder, templates, scopes, Unity's logs, sinks and runtime control.
 - `runtime-console.md`: the in-game console, built-in and logger commands, method commands, console variables, release safety.
-- `editor-tooling.md`: Log Viewer, Console Commands window, Project Settings, category code generation, analyzers.
+- `editor-tooling.md`: Log Viewer, Logger Control, Console Commands window, Project Settings, sink previews, category code generation, analyzers.
 - `architecture.md`: how the pieces fit together, and the guardrails worth keeping.
 - `extending.md`: custom sinks, enrichers, commands, argument types and cheat policies.
 - `troubleshooting.md`: when nothing prints, or the console does not appear.

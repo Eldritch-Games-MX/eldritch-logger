@@ -75,7 +75,8 @@ _logger.Error(ex, "Saving slot {Slot} failed", slot);
   can group entries by template.
 - Holes are filled in order. A hole without an argument stays as written
   (`{Player}`), and a property of the same name from `AddKeyValue` or a scope
-  is still shown. Extra arguments are ignored.
+  is still shown. Extra arguments are ignored. Analyzer rule `ELG006` flags
+  both mistakes in constant templates.
 - Formats (`{Damage:0.0}`) use the invariant culture. `{{` and `}}` are literal
   braces.
 - Rendering never throws. An invalid format (`{Hp:D}` given a float) is
@@ -195,7 +196,8 @@ control.ClearOverrides();
 control.Flush();
 ```
 
-The console's `log.*` commands are built on this API (see `runtime-console.md`).
+The console's `log.*` commands and the editor's **Logger Control** window are
+built on this API (see `runtime-console.md` and `editor-tooling.md`).
 
 ## Diagnostics
 

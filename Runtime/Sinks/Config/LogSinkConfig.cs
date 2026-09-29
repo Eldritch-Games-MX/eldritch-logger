@@ -42,5 +42,14 @@ namespace EldritchGames.EldritchLogger.Sinks.Config
         public abstract string DisplayName { get; }
 
         public abstract ILogSink CreateSink(SinkBuildContext context);
+
+        /// <summary>
+        /// How <paramref name="sample"/> would be written by this sink, for the inspector preview, or null when the
+        /// sink has no text form. Override in custom configs to preview their output.
+        /// </summary>
+        public virtual string Preview(Dto.LogEntryDto sample, LogSettings settings) => null;
+
+        /// <summary>True when <see cref="Preview"/> returns Unity rich text (shown rendered rather than as source).</summary>
+        public virtual bool PreviewIsRichText => false;
     }
 }
