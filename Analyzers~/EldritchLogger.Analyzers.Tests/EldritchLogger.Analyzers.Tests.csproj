@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0" />
+    <ProjectReference Include="..\EldritchLogger.Analyzers\EldritchLogger.Analyzers.csproj" />
+    <ProjectReference Include="..\EldritchLogger.Analyzers.CodeFixes\EldritchLogger.Analyzers.CodeFixes.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,81 +1,93 @@
 using EldritchGames.EldritchLogger.Domain;
 using EldritchGames.EldritchLogger.Dto;
-using EldritchGames.EldritchLogger.Settings;
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace EldritchGames.EldritchLogger.Mapper
 {
     public class LogEntryMapper : ILogEntryMapper
     {
-        private readonly LogSettings settings;
+        private const string LoggerNamespace = "EldritchGames.EldritchLogger";
 
-        public LogEntryMapper(LogSettings settings)
+        private static readonly Regex LambdaFrame = new("<.*?>b__\\d+(_\\d+)?", RegexOptions.Compiled);
+        private static readonly Regex StateMachineFrame = new("<.*?>d__\\d+\\.MoveNext", RegexOptions.Compiled);
+        private static readonly Regex LocalFunctionFrame = new("<.*?>g__.*?\\|\\d+(_\\d+)?", RegexOptions.Compiled);
+
+        private readonly bool filterLoggerFrames;
+
+        /// <param name="filterLoggerFrames">Remove the logger's own frames from exception stack traces.</param>
+        public LogEntryMapper(bool filterLoggerFrames = true)
         {
-            this.settings = settings;
+            this.filterLoggerFrames = filterLoggerFrames;
         }
 
         public LogEntryDto ToDto(LogEntry entry)
         {
-            string exceptionMessage = null;
+            if (entry == null) throw new ArgumentNullException(nameof(entry));
 
-            if (entry.Exception != null)
-            {
-                var trace = entry.Exception.StackTrace ?? string.Empty;
-
-                if (settings.filterLoggerFrames)
+            var metadata = new List<MetadataEntry>(entry.Properties.Count);
+            foreach (var kv in entry.Properties)
+                metadata.Add(new MetadataEntry
                 {
-                    trace = CleanStackTrace(trace);
-                }
-
-                exceptionMessage = $"{entry.Exception.GetType().Name}: {entry.Exception.Message}\n{trace}";
-                exceptionMessage = Normalize(exceptionMessage);
-            }
+                    Key = kv.Key,
+                    Value = FormatValue(kv.Value),
+                    InMessage = Contains(entry.RenderedProperties, kv.Key)
+                });
 
             return new LogEntryDto
             {
-                Timestamp = entry.Timestamp,
-                Level = entry.Level.ToString(),
-                Category = entry.Category.ToString(),
+                Timestamp = entry.TimestampUtc,
+                Level = entry.Level,
+                Category = entry.Category.Name,
                 Message = entry.Message,
-                Metadata = entry.Metadata?.Select(kv => new MetadataEntry
-                {
-                    Key = kv.Key,
-                    Value = kv.Value?.ToString()
-                }).ToList() ?? new List<MetadataEntry>(),
-                Exception = exceptionMessage
+                Metadata = metadata,
+                Exception = entry.Exception != null ? DescribeException(entry.Exception) : null,
+                Context = entry.Context
             };
         }
 
-        private string Normalize(string text)
+        /// <summary>
+        /// Property values are written with the invariant culture, so files and remote sinks get
+        /// <c>182.4</c> on every machine (not <c>182,4</c> on a German one) and match the rendered message.
+        /// </summary>
+        private static string FormatValue(object value) => Core.LogValues.Format(value);
+
+        private static bool Contains(IReadOnlyList<string> keys, string key)
         {
-            if (string.IsNullOrEmpty(text)) return text;
+            for (int i = 0; i < keys.Count; i++)
+                if (keys[i] == key) return true;
+            return false;
+        }
 
-            // Lambdas / anonymous handlers
-            text = Regex.Replace(text, "<.*?>b__\\d+(_\\d+)?", "AnonymousHandler");
+        private string DescribeException(Exception exception)
+        {
+            var trace = exception.StackTrace ?? string.Empty;
+            if (filterLoggerFrames)
+                trace = RemoveLoggerFrames(trace);
 
-            // Async state machines
-            text = Regex.Replace(text, "<.*?>d__\\d+\\.MoveNext", "AsyncStateMachine");
+            return Normalize($"{exception.GetType().Name}: {exception.Message}\n{trace}".TrimEnd());
+        }
 
-            // Iterator blocks
-            text = Regex.Replace(text, "<.*?>d__\\d+\\.MoveNext", "IteratorBlock");
-
-            // Local functions
-            text = Regex.Replace(text, "<.*?>g__.*?\\|\\d+(_\\d+)?", "LocalFunction");
-
+        private static string Normalize(string text)
+        {
+            text = LambdaFrame.Replace(text, "AnonymousHandler");
+            text = StateMachineFrame.Replace(text, "AsyncStateMachine");
+            text = LocalFunctionFrame.Replace(text, "LocalFunction");
             return text;
         }
 
-        private string CleanStackTrace(string raw)
+        private static string RemoveLoggerFrames(string raw)
         {
-            var lines = raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var filtered = lines
-                .Where(line => !line.Contains("EldritchGames.EldritchLogger"))
-                .Select(line => line.Trim());
-
-            return string.Join("\n", filtered);
+            var sb = new StringBuilder(raw.Length);
+            foreach (var line in raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (line.Contains(LoggerNamespace)) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(line.Trim());
+            }
+            return sb.ToString();
         }
     }
 }

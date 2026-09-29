@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Unity loads analyzers built for netstandard2.0 against Roslyn 4.3 (Unity 6). -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- Where the built DLL is copied inside the package (see build.ps1). -->
+    <PackageAnalyzerDir>$(MSBuildThisFileDirectory)..\..\Runtime\Analyzers\</PackageAnalyzerDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="CopyToPackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackageAnalyzerDir)" />
+  </Target>
+
+</Project>

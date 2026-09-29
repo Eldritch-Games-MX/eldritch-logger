@@ -1,88 +1,99 @@
 using EldritchGames.EldritchLogger.Builder;
 using EldritchGames.EldritchLogger.Core;
-using Moq;
+using EldritchGames.EldritchLogger.Domain;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
-    [TestFixture]
     public class LogBuilderTests
     {
-        private Mock<IEldritchLogger> mockLogger;
-        private LogLevel capturedLevel;
-        private LogCategory capturedCategory;
-        private string capturedMessage;
-        private Dictionary<string, object> capturedMetadata;
-        private Exception capturedException;
+        private sealed class CapturingLogger : IEldritchLogger
+        {
+            public readonly List<LogEntry> Entries = new();
+            public bool IsEnabled(LogLevel level, LogCategory category) => true;
+            public void Log(LogEntry entry) => Entries.Add(entry);
+        }
+
+        private CapturingLogger logger;
+        private GameObject gameObject;
 
         [SetUp]
-        public void Setup()
-        {
-            mockLogger = new Mock<IEldritchLogger>();
+        public void SetUp() => logger = new CapturingLogger();
 
-            mockLogger.Setup(l => l.Log(
-                It.IsAny<LogLevel>(),
-                It.IsAny<LogCategory>(),
-                It.IsAny<string>(),
-                It.IsAny<Dictionary<string, object>>(),
-                It.IsAny<Exception>()))
-            .Callback((LogLevel level, LogCategory category, string message,
-                       Dictionary<string, object> metadata, Exception exception) =>
-            {
-                capturedLevel = level;
-                capturedCategory = category;
-                capturedMessage = message;
-                capturedMetadata = metadata;
-                capturedException = exception;
-            });
+        [TearDown]
+        public void TearDown()
+        {
+            if (gameObject != null) UnityEngine.Object.DestroyImmediate(gameObject);
         }
 
         [Test]
-        public void Category_SetsCategory()
+        public void Chain_ProducesOneEntryWithEverything()
         {
-            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
-                .Category(LogCategory.UI)
-                .Log("Category test");
+            var ex = new Exception("x");
 
-            Assert.AreEqual(LogCategory.UI, capturedCategory);
+            logger.AtWarning(LogCategory.AI)
+                  .Category("Loot")
+                  .AddKeyValue("Id", 42)
+                  .WithException(ex)
+                  .Log("message");
+
+            var entry = logger.Entries[0];
+            Assert.That(logger.Entries, Has.Count.EqualTo(1));
+            Assert.That(entry.Level, Is.EqualTo(LogLevel.Warning));
+            Assert.That(entry.Category, Is.EqualTo(new LogCategory("Loot")));
+            Assert.That(entry.Properties["Id"], Is.EqualTo(42));
+            Assert.That(entry.Exception, Is.SameAs(ex));
+            Assert.That(entry.Message, Is.EqualTo("message"));
         }
 
         [Test]
-        public void AddKeyValue_AddsMetadata()
+        public void WithComponent_RecordsComponentAndGameObject_AndSetsContext()
         {
-            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
-                .AddKeyValue("CustomKey", "CustomValue")
-                .Log("Info with metadata");
+            gameObject = new GameObject("Player");
+            var component = gameObject.AddComponent<BoxCollider>();
 
-            Assert.AreEqual("CustomValue", capturedMetadata["CustomKey"]);
+            logger.AtInfo().WithComponent(component).Log("m");
+
+            var entry = logger.Entries[0];
+            Assert.That(entry.Properties[LogPropertyKeys.Component], Is.EqualTo(nameof(BoxCollider)));
+            Assert.That(entry.Properties[LogPropertyKeys.GameObject], Is.EqualTo("Player"));
+            Assert.That(entry.Context, Is.SameAs(component));
         }
 
         [Test]
-        public void WithException_AttachesException()
+        public void WithEvent_DistinguishesDelegatesAndUnityEvents()
         {
-            var ex = new InvalidOperationException("Boom!");
-            new LogBuilder(mockLogger.Object, LogLevel.Error, LogCategory.General)
-                .WithException(ex)
-                .Log("Error with exception");
+            Action handler = () => { };
 
-            Assert.AreEqual(ex, capturedException);
+            logger.AtInfo().WithEvent(handler, "OnDeath").Log("a");
+            logger.AtInfo().WithEvent(new UnityEvent(), "OnClick").Log("b");
+
+            Assert.That(logger.Entries[0].Properties[LogPropertyKeys.CSharpEvent], Is.EqualTo("OnDeath"));
+            Assert.That(logger.Entries[1].Properties[LogPropertyKeys.UnityEvent], Is.EqualTo("OnClick"));
         }
 
         [Test]
-        public void WithComponent_AddsComponentContextAndGameObject()
+        public void WithContext_SetsContextObject()
         {
-            var go = new GameObject("TestObject");
-            var component = go.AddComponent<BoxCollider>();
+            gameObject = new GameObject("Ctx");
 
-            new LogBuilder(mockLogger.Object, LogLevel.Info, LogCategory.General)
-                .WithComponent(component)
-                .Log("Info with component");
+            logger.AtInfo().WithContext(gameObject).Log("m");
 
-            Assert.AreEqual("BoxCollider@TestObject", capturedMetadata["ComponentContext"]);
-            Assert.AreEqual("TestObject", capturedMetadata["GameObject"]);
+            Assert.That(logger.Entries[0].Context, Is.SameAs(gameObject));
+        }
+
+        [Test]
+        public void NullArguments_Throw()
+        {
+            var builder = new LogBuilder(logger, LogLevel.Info);
+            Assert.Throws<ArgumentNullException>(() => builder.AddKeyValue(null, 1));
+            Assert.Throws<ArgumentNullException>(() => builder.WithEvent(null, "x"));
+            Assert.Throws<ArgumentNullException>(() => builder.WithComponent(null));
+            Assert.Throws<ArgumentNullException>(() => new LogBuilder(null, LogLevel.Info));
         }
     }
 }

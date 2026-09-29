@@ -1,293 +1,427 @@
 using EldritchGames.EldritchLogger.Core;
+using EldritchGames.EldritchLogger.EditorTools.CodeGen;
+using EldritchGames.EldritchLogger.EditorTools.ProjectSettings;
+using EldritchGames.EldritchLogger.Sinks;
+using EldritchGames.EldritchLogger.Sinks.Files;
 using EldritchGames.EldritchLogger.Dto;
-using EldritchGames.EldritchLogger.Format;
+using EldritchGames.EldritchLogger.Formatting;
 using EldritchGames.EldritchLogger.Settings;
-using EldritchGames.EldritchLogger.Visuals;
+using EldritchGames.EldritchLogger.Sinks.Config;
+using EldritchGames.EldritchLogger.Sinks.Network;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
-namespace EldritchGames.EldritchLogger.UI
+namespace EldritchGames.EldritchLogger.EditorTools
 {
     [CustomEditor(typeof(LogSettings))]
     public class LogSettingsEditor : Editor
     {
-        private bool showAdvanced = false;
-        private string _newCategoryName = "";
-        private string _addCategoryError = "";
+        private SerializedProperty minimumLevel;
+        private SerializedProperty useCategoryColors;
+        private SerializedProperty timestampFormat;
+        private SerializedProperty messagePrefix;
+        private SerializedProperty filterLoggerFrames;
+        private SerializedProperty sinks;
+        private SerializedProperty autoInitialize;
+        private SerializedProperty captureUnityLogs;
+
+        private bool showAdvanced;
+        private string newCategoryName = "";
+        private string addCategoryError = "";
+        private HashSet<string> unusedCategories;
+        private LogEntryDto sample;
+        private readonly HashSet<LogSinkConfig> previewOpen = new();
+        private readonly Dictionary<LogSinkConfig, Task<(bool ok, string result)>> httpTests = new();
+
+        private void OnEnable()
+        {
+            minimumLevel = serializedObject.FindProperty(nameof(LogSettings.minimumLevel));
+            useCategoryColors = serializedObject.FindProperty(nameof(LogSettings.useCategoryColors));
+            timestampFormat = serializedObject.FindProperty(nameof(LogSettings.timestampFormat));
+            messagePrefix = serializedObject.FindProperty(nameof(LogSettings.messagePrefix));
+            filterLoggerFrames = serializedObject.FindProperty(nameof(LogSettings.filterLoggerFrames));
+            sinks = serializedObject.FindProperty(nameof(LogSettings.sinks));
+            autoInitialize = serializedObject.FindProperty(nameof(LogSettings.autoInitialize));
+            captureUnityLogs = serializedObject.FindProperty(nameof(LogSettings.captureUnityLogs));
+        }
 
         public override void OnInspectorGUI()
         {
-            LogSettings settings = (LogSettings)target;
+            var settings = (LogSettings)target;
 
             DrawPresets(settings);
-            DrawLogLevel(settings);
-            DrawCategorySection(settings);
-            DrawValidation(settings);
-            DrawExport(settings);
-            DrawAdvanced(settings);
-            DrawPreview(settings);
 
-            if (GUI.changed)
+            serializedObject.Update();
+            EditorGUILayout.PropertyField(minimumLevel, new GUIContent("Minimum Log Level"));
+            EditorGUILayout.Space();
+            serializedObject.ApplyModifiedProperties();
+
+            DrawCategories(settings);
+
+            serializedObject.Update();
+            DrawSinks();
+            DrawUnityCapture(settings);
+            DrawAdvanced();
+            serializedObject.ApplyModifiedProperties();
+
+            DrawPreview(settings);
+            DrawRunningSinks();
+        }
+
+        public override bool RequiresConstantRepaint() =>
+            EditorApplication.isPlaying || httpTests.Values.Any(t => !t.IsCompleted);
+
+        /// <summary>Built once (it runs a small logger), and again when the minimum level changes.</summary>
+        private LogEntryDto Sample(LogSettings settings)
+        {
+            if (sample == null || sample.Level != settings.minimumLevel) sample = SinkPreview.CreateSample(settings);
+            return sample;
+        }
+
+        private static void DrawRunningSinks()
+        {
+            if (!EditorApplication.isPlaying) return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField(new GUIContent("Running Sinks", "Sinks attached to the logger in this Play Mode session."), EditorStyles.boldLabel);
+
+            var registry = ELoggerFactory.Sinks;
+            if (registry == null)
             {
-                EditorUtility.SetDirty(settings);
+                EditorGUILayout.HelpBox("No logger is installed.", MessageType.Info);
+                return;
             }
+
+            foreach (var sink in registry.All)
+            {
+                var diagnostics = sink as ISinkDiagnostics;
+                EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+                EditorGUILayout.LabelField(sink.Name, EditorStyles.boldLabel, GUILayout.MinWidth(120));
+                EditorGUILayout.LabelField($"≥ {sink.MinimumLevel}", GUILayout.Width(80));
+                if (diagnostics != null)
+                {
+                    var dropped = diagnostics.DroppedCount;
+                    var style = dropped > 0 ? EditorStyles.boldLabel : EditorStyles.label;
+                    EditorGUILayout.LabelField($"dropped: {dropped}", style, GUILayout.Width(100));
+                    if (!string.IsNullOrEmpty(diagnostics.Location) && System.IO.File.Exists(diagnostics.Location) &&
+                        GUILayout.Button(new GUIContent("Reveal", diagnostics.Location), GUILayout.Width(60)))
+                        EditorUtility.RevealInFinder(diagnostics.Location);
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (sink is BatchingLogSink batching)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.LabelField($"queued {batching.QueuedCount} · sent {batching.SentCount} · retries {batching.RetryCount}", EditorStyles.miniLabel);
+                    if (batching.LastError != null)
+                        EditorGUILayout.HelpBox($"Last error ({batching.LastErrorUtc?.ToLocalTime():HH:mm:ss}): {batching.LastError}", MessageType.Warning);
+                    EditorGUI.indentLevel--;
+                }
+            }
+        }
+
+        private static void RevealDirectory(string directory)
+        {
+            System.IO.Directory.CreateDirectory(directory);
+            EditorUtility.RevealInFinder(directory);
         }
 
         private void DrawPresets(LogSettings settings)
         {
             EditorGUILayout.LabelField("Presets", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(new GUIContent("Verbose", "Enable all categories and lowest log level for maximum detail.")))
-                settings.ApplyVerbosePreset();
-            if (GUILayout.Button(new GUIContent("Normal", "Balanced logging for development use.")))
-                settings.ApplyNormalPreset();
-            if (GUILayout.Button(new GUIContent("Production", "Minimal logging for release builds.")))
-                settings.ApplyProductionPreset();
+            if (GUILayout.Button(new GUIContent("Verbose", "All categories, Debug level.")))
+                Modify(settings, "Apply Verbose Preset", LogSettingsPresets.ApplyVerbose);
+            if (GUILayout.Button(new GUIContent("Normal", "Balanced logging for development.")))
+                Modify(settings, "Apply Normal Preset", LogSettingsPresets.ApplyNormal);
+            if (GUILayout.Button(new GUIContent("Production", "Warnings and above, core categories.")))
+                Modify(settings, "Apply Production Preset", LogSettingsPresets.ApplyProduction);
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space();
         }
 
-        private void DrawCategorySection(LogSettings settings)
+        private void DrawCategories(LogSettings settings)
         {
             EditorGUILayout.LabelField(new GUIContent("Categories", "Enable/disable categories and customize their colors."), EditorStyles.boldLabel);
 
-            // Ensure lists are initialized
-            settings.enabledCategories ??= new List<LogCategory>();
-            settings.categoryColors ??= new List<CategoryColor>();
-            settings.customCategories ??= new List<CustomCategoryEntry>();
+            string toRemove = null;
+            EditorGUI.BeginChangeCheck();
+            var edits = new List<(CategorySetting entry, bool enabled, Color color)>();
 
-            // Make sure every built-in category has a color entry
-            foreach (LogCategory cat in Enum.GetValues(typeof(LogCategory)))
-            {
-                if (!settings.categoryColors.Exists(c => c.category == cat))
-                    settings.categoryColors.Add(new CategoryColor(cat, Color.white));
-            }
-
-            // --- Built-in categories ---
-            foreach (var entry in settings.categoryColors)
+            foreach (var entry in settings.categories)
             {
                 EditorGUILayout.BeginHorizontal();
+                bool enabled = EditorGUILayout.ToggleLeft(entry.name, entry.enabled, GUILayout.Width(150));
+                Color color = settings.useCategoryColors ? EditorGUILayout.ColorField(entry.color) : entry.color;
+                if (unusedCategories != null && unusedCategories.Contains(entry.name))
+                    GUILayout.Label(new GUIContent("unused?", "No script under Assets/ mentions this category (as a string or generated field)."),
+                                    EditorStyles.miniButton, GUILayout.Width(60));
 
-                bool enabled = settings.enabledCategories.Contains(entry.category);
-                bool newEnabled = EditorGUILayout.ToggleLeft(entry.category.ToString(), enabled, GUILayout.Width(150));
-                if (newEnabled && !enabled)
-                    settings.enabledCategories.Add(entry.category);
-                else if (!newEnabled && enabled)
-                    settings.enabledCategories.Remove(entry.category);
-
-                if (settings.useCategoryColors)
-                    entry.color = EditorGUILayout.ColorField(entry.color);
-
-                EditorGUILayout.EndHorizontal();
-            }
-
-            EditorGUILayout.Space();
-
-            // --- Custom categories ---
-            EditorGUILayout.LabelField("Custom Categories", EditorStyles.boldLabel);
-
-            var toRemove = new List<string>();
-            foreach (var entry in settings.customCategories)
-            {
-                EditorGUILayout.BeginHorizontal();
-
-                entry.enabled = EditorGUILayout.ToggleLeft(entry.name, entry.enabled, GUILayout.Width(150));
-
-                if (settings.useCategoryColors)
-                    entry.color = EditorGUILayout.ColorField(entry.color);
-
-                if (GUILayout.Button("✕", GUILayout.Width(24)))
-                    toRemove.Add(entry.name);
+                if (entry.IsBuiltIn)
+                    GUILayout.Space(28);
+                else if (GUILayout.Button(new GUIContent("✕", "Remove category"), GUILayout.Width(24)))
+                    toRemove = entry.name;
 
                 EditorGUILayout.EndHorizontal();
+                edits.Add((entry, enabled, color));
             }
 
-            foreach (var name in toRemove)
+            if (EditorGUI.EndChangeCheck())
             {
-                settings.RemoveCustomCategory(name);
+                Undo.RecordObject(settings, "Edit Log Categories");
+                foreach (var (entry, enabled, color) in edits)
+                {
+                    entry.enabled = enabled;
+                    entry.color = color;
+                }
                 EditorUtility.SetDirty(settings);
             }
 
-            // Add new custom category row
+            if (toRemove != null)
+            {
+                Modify(settings, "Remove Log Category", s => s.RemoveCategory(toRemove));
+                CategoryCodeGeneration.GenerateIfEnabled(settings);
+            }
+
             EditorGUILayout.BeginHorizontal();
-            _newCategoryName = EditorGUILayout.TextField(_newCategoryName);
+            newCategoryName = EditorGUILayout.TextField(newCategoryName);
             if (GUILayout.Button("Add", GUILayout.Width(50)))
             {
-                if (settings.AddCustomCategory(_newCategoryName.Trim(), Color.white))
+                var name = newCategoryName.Trim();
+                bool added = false;
+                Modify(settings, "Add Log Category", s => added = s.AddCategory(name, Color.white));
+                if (added)
                 {
-                    _newCategoryName = "";
-                    _addCategoryError = "";
-                    EditorUtility.SetDirty(settings);
+                    CategoryCodeGeneration.GenerateIfEnabled(settings);
+                    newCategoryName = "";
+                    addCategoryError = "";
                 }
                 else
                 {
-                    _addCategoryError = string.IsNullOrWhiteSpace(_newCategoryName)
+                    addCategoryError = string.IsNullOrWhiteSpace(name)
                         ? "Name cannot be empty."
-                        : $"\"{_newCategoryName.Trim()}\" already exists or conflicts with a built-in category.";
+                        : $"\"{name}\" already exists.";
                 }
             }
             EditorGUILayout.EndHorizontal();
 
-            if (!string.IsNullOrEmpty(_addCategoryError))
-                EditorGUILayout.HelpBox(_addCategoryError, MessageType.Error);
+            if (!string.IsNullOrEmpty(addCategoryError))
+                EditorGUILayout.HelpBox(addCategoryError, MessageType.Error);
 
-            EditorGUILayout.Space();
-
-            // Bulk actions
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(new GUIContent("Enable All", "Enable logging for all categories.")))
-                settings.EnableAllCategories();
-            if (GUILayout.Button(new GUIContent("Disable All", "Disable logging for all categories.")))
-                settings.DisableAllCategories();
+            if (GUILayout.Button("Enable All"))
+                Modify(settings, "Enable All Categories", s => s.SetAllCategoriesEnabled(true));
+            if (GUILayout.Button("Disable All"))
+                Modify(settings, "Disable All Categories", s => s.SetAllCategoriesEnabled(false));
+            if (GUILayout.Button(new GUIContent("Generate Class", "Generate a static class with one field per category (see Project Settings > Eldritch Logger)."), GUILayout.Width(110)))
+                CategoryCodeGeneration.Generate(settings);
+            if (GUILayout.Button(new GUIContent("⚙", "Code generation options"), GUILayout.Width(24)))
+                EldritchLoggerSettingsProvider.Open();
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.Space();
-        }
-
-
-        private void DrawLogLevel(LogSettings settings)
-        {
-            settings.logLevel = (LogLevel)EditorGUILayout.EnumPopup(
-                new GUIContent("Minimum Log Level", "Logs below this level will be ignored."),
-                settings.logLevel);
-            EditorGUILayout.Space();
-        }
-
-        private void DrawValidation(LogSettings settings)
-        {
-            if (settings.enabledCategories.Count == 0)
+            if (GUILayout.Button(new GUIContent("Find Unused Categories", "Search scripts under Assets/ for custom categories nobody logs to.")))
+                unusedCategories = new HashSet<string>(CategoryUsage.FindUnreferencedInProject(settings), StringComparer.OrdinalIgnoreCase);
+            if (unusedCategories != null)
             {
+                var message = unusedCategories.Count == 0
+                    ? "Every custom category is mentioned by at least one script."
+                    : $"Not mentioned by any script: {string.Join(", ", unusedCategories)}. The search is textual (names built at runtime are not found), so check before removing.";
+                EditorGUILayout.HelpBox(message, unusedCategories.Count == 0 ? MessageType.Info : MessageType.Warning);
+            }
+
+            if (!settings.categories.Any(c => c.enabled))
                 EditorGUILayout.HelpBox("No categories enabled. No logs will be output.", MessageType.Warning);
+
+            EditorGUILayout.Space();
+        }
+
+        private void DrawSinks()
+        {
+            EditorGUILayout.LabelField(new GUIContent("Sinks", "Where log entries are written."), EditorStyles.boldLabel);
+
+            int removeIndex = -1;
+            for (int i = 0; i < sinks.arraySize; i++)
+            {
+                var element = sinks.GetArrayElementAtIndex(i);
+                var config = element.managedReferenceValue as LogSinkConfig;
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.BeginHorizontal();
+                element.isExpanded = EditorGUILayout.Foldout(element.isExpanded,
+                    config != null ? config.DisplayName : "(missing sink type)", true);
+                if (config is FileSinkConfig fileConfig && GUILayout.Button(new GUIContent("Open Folder", "Reveal the log directory."), GUILayout.Width(90)))
+                    RevealDirectory(LogFileLocator.ResolveDirectory(fileConfig.directory));
+                if (GUILayout.Button(new GUIContent("✕", "Remove sink"), GUILayout.Width(24)))
+                    removeIndex = i;
+                EditorGUILayout.EndHorizontal();
+
+                if (element.isExpanded && config != null)
+                {
+                    EditorGUI.indentLevel++;
+                    var child = element.Copy();
+                    var end = element.GetEndProperty();
+                    if (child.NextVisible(true))
+                    {
+                        do
+                        {
+                            if (SerializedProperty.EqualContents(child, end)) break;
+                            EditorGUILayout.PropertyField(child, true);
+                        } while (child.NextVisible(false));
+                    }
+                    if (config is HttpSinkConfig http) DrawHttpTest(http);
+                    DrawSinkPreview(config);
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.EndVertical();
+            }
+
+            if (removeIndex >= 0)
+                sinks.DeleteArrayElementAtIndex(removeIndex);
+
+            if (GUILayout.Button("Add Sink ▾"))
+                ShowAddSinkMenu();
+
+            EditorGUILayout.Space();
+        }
+
+        private void DrawSinkPreview(LogSinkConfig config)
+        {
+            var settings = (LogSettings)target;
+            string preview;
+            try
+            {
+                preview = config.Preview(Sample(settings), settings);
+            }
+            catch (Exception ex)
+            {
+                preview = $"(preview failed: {ex.Message})";
+            }
+            if (preview == null) return;
+
+            bool open = EditorGUILayout.Foldout(previewOpen.Contains(config), new GUIContent("Output Preview", "How a sample entry (template, scope and exception) is written by this sink."), true);
+            if (open) previewOpen.Add(config); else previewOpen.Remove(config);
+            if (!open) return;
+
+            if (config.PreviewIsRichText)
+            {
+                var style = new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true };
+                EditorGUILayout.LabelField(preview, style);
+            }
+            else
+            {
+                var style = new GUIStyle(EditorStyles.textArea) { wordWrap = true };
+                float height = style.CalcHeight(new GUIContent(preview), EditorGUIUtility.currentViewWidth - 60);
+                EditorGUILayout.SelectableLabel(preview, style, GUILayout.Height(Mathf.Min(height, 200)));
             }
         }
 
-        private void DrawAdvanced(LogSettings settings)
+        private void DrawHttpTest(HttpSinkConfig config)
         {
-            showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced Settings");
-            if (showAdvanced)
+            httpTests.TryGetValue(config, out var test);
+            using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField("Timestamp Format", EditorStyles.boldLabel);
-                settings.timestampFormat = EditorGUILayout.TextField(
-                    new GUIContent("Format", "Custom date/time format string (e.g. yyyy-MM-dd HH:mm:ss)."),
-                    settings.timestampFormat);
+                GUILayout.Space(EditorGUI.indentLevel * 15);
+                using (new EditorGUI.DisabledScope(test != null && !test.IsCompleted))
+                {
+                    if (GUILayout.Button(new GUIContent("Send Test Entry", "Post the sample entry once with these settings, to check the URL and headers."), GUILayout.Width(130)))
+                    {
+                        var entry = Sample((LogSettings)target);
+                        httpTests[config] = Task.Run(() => (config.TrySendTest(entry, out var result), result));
+                    }
+                }
 
-                EditorGUILayout.LabelField("Message Prefix", EditorStyles.boldLabel);
-                settings.messagePrefix = EditorGUILayout.TextField(
-                    new GUIContent("Prefix", "Optional text prepended to every log message."),
-                    settings.messagePrefix);
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Stack Trace Settings", EditorStyles.boldLabel);
-
-                settings.suppressUnityStackTrace = EditorGUILayout.Toggle(
-                    new GUIContent("Suppress Unity Stack Trace", "If enabled, Unity's automatic stack traces will be suppressed. EldritchLogger will handle exception traces itself."),
-                    settings.suppressUnityStackTrace);
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Context Settings", EditorStyles.boldLabel);
-
-                settings.useContextObjects = EditorGUILayout.Toggle(
-                    new GUIContent("Use Context Objects", "Attach Unity GameObject/Component context to logs."),
-                    settings.useContextObjects);
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Category Colors", EditorStyles.boldLabel);
-
-                settings.useCategoryColors = EditorGUILayout.Toggle(
-                    new GUIContent("Use Category Colors", "Enable per-category color customization in the inspector."),
-                    settings.useCategoryColors);
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Exception Filtering", EditorStyles.boldLabel);
-
-                settings.filterLoggerFrames = EditorGUILayout.Toggle(
-                    new GUIContent("Filter Logger Internals", "Remove logger framework internals from stack traces."),
-                    settings.filterLoggerFrames);
+                if (test == null) GUILayout.FlexibleSpace();
+                else if (!test.IsCompleted) GUILayout.Label("Sending…");
+                else
+                {
+                    var (ok, result) = test.Result;
+                    GUILayout.Label(new GUIContent((ok ? "✔ " : "✖ ") + result, result), ok ? EditorStyles.label : EditorStyles.boldLabel);
+                }
             }
+        }
+
+        private void ShowAddSinkMenu()
+        {
+            var menu = new GenericMenu();
+            var types = TypeCache.GetTypesDerivedFrom<LogSinkConfig>()
+                .Where(t => !t.IsAbstract && !t.IsGenericType && t.GetConstructor(Type.EmptyTypes) != null)
+                .OrderBy(t => t.Name);
+
+            foreach (var type in types)
+            {
+                var label = ((LogSinkConfig)Activator.CreateInstance(type)).DisplayName;
+                menu.AddItem(new GUIContent(label), false, () =>
+                {
+                    serializedObject.Update();
+                    int index = sinks.arraySize;
+                    sinks.InsertArrayElementAtIndex(index);
+                    var element = sinks.GetArrayElementAtIndex(index);
+                    element.managedReferenceValue = Activator.CreateInstance(type);
+                    element.isExpanded = true;
+                    serializedObject.ApplyModifiedProperties();
+                });
+            }
+
+            menu.ShowAsContext();
+        }
+
+        private void DrawUnityCapture(LogSettings settings)
+        {
+            EditorGUILayout.PropertyField(captureUnityLogs, new GUIContent("Capture Unity Logs",
+                "Forward Unity's own messages (Debug.Log, engine errors, uncaught exceptions) into the logger under the 'Unity' category."));
+
+            if (settings.captureUnityLogs != Pipeline.UnityLogCapture.Off && !settings.IsCategoryEnabled(LogCategory.Unity))
+            {
+                EditorGUILayout.HelpBox("The 'Unity' category is missing or disabled, so captured messages are discarded.", MessageType.Warning);
+                if (GUILayout.Button("Enable 'Unity' category"))
+                {
+                    Modify(settings, "Enable Unity Category", s =>
+                    {
+                        if (!s.AddCategory(LogCategory.Unity.Name, Color.gray))
+                            s.FindCategory(LogCategory.Unity).enabled = true;
+                    });
+                    CategoryCodeGeneration.GenerateIfEnabled(settings);
+                }
+            }
+            EditorGUILayout.Space();
+        }
+
+        private void DrawAdvanced()
+        {
+            showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced Settings", true);
+            if (!showAdvanced) return;
+
+            EditorGUI.indentLevel++;
+            EditorGUILayout.PropertyField(timestampFormat, new GUIContent("Timestamp Format", "e.g. yyyy-MM-dd HH:mm:ss"));
+            EditorGUILayout.PropertyField(messagePrefix, new GUIContent("Message Prefix"));
+            EditorGUILayout.PropertyField(useCategoryColors, new GUIContent("Use Category Colors"));
+            EditorGUILayout.PropertyField(filterLoggerFrames, new GUIContent("Filter Logger Internals", "Remove logger frames from exception stack traces."));
+            EditorGUILayout.PropertyField(autoInitialize, new GUIContent("Auto Initialize", "Create the logger before the first scene loads."));
+            EditorGUI.indentLevel--;
             EditorGUILayout.Space();
         }
 
         private void DrawPreview(LogSettings settings)
         {
-            EditorGUILayout.LabelField(new GUIContent("Preview", "Shows a sample log entry with current settings applied."), EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent("Preview", "A sample entry with the current settings."), EditorStyles.boldLabel);
 
-            var sampleDto = SampleDto(settings);
-            var formatter = new LogEntryFormatter(settings);
-            string preview = formatter.Format(sampleDto);
-
-            GUIStyle richTextStyle = new(EditorStyles.label)
-            {
-                richText = true,
-                wordWrap = true
-            };
-
-            EditorGUILayout.LabelField(preview, richTextStyle, GUILayout.Height(100));
+            string preview = new TextLogFormatter(settings, richText: true).Format(Sample(settings));
+            var style = new GUIStyle(EditorStyles.label) { richText = true, wordWrap = true };
+            EditorGUILayout.LabelField(preview, style);
         }
 
-        private void DrawExport(LogSettings settings)
+        private static void Modify(LogSettings settings, string undoName, Action<LogSettings> change)
         {
-            EditorGUILayout.LabelField("Export Settings", EditorStyles.boldLabel);
-
-            settings.enableExport = EditorGUILayout.Toggle(
-                new GUIContent("Enable Export", "Toggle to write logs to disk."),
-                settings.enableExport);
-
-            if (settings.enableExport)
-            {
-                EditorGUILayout.LabelField("Formats", EditorStyles.boldLabel);
-
-                // Ensure list is initialized
-                settings.exportFormats ??= new List<ExportFormat>();
-
-                DrawFormatToggle(settings, ExportFormat.Json, "JSON");
-                DrawFormatToggle(settings, ExportFormat.Xml, "XML");
-                DrawFormatToggle(settings, ExportFormat.Text, "Text");
-
-                settings.exportFileName = EditorGUILayout.TextField(
-                    new GUIContent("File Name", "Name of the log file without extension."),
-                    settings.exportFileName);
-
-                settings.exportDirectory = EditorGUILayout.TextField(
-                    new GUIContent("Directory", "Target directory for exported logs. Leave empty to use Application.persistentDataPath."),
-                    settings.exportDirectory);
-
-                settings.clearOnStartup = EditorGUILayout.Toggle(
-                    new GUIContent("Clear On Startup", "If enabled, previous session logs will be deleted when the logger initializes."),
-                    settings.clearOnStartup);
-
-                EditorGUILayout.HelpBox(
-                    "If directory is empty, logs will be written to Application.persistentDataPath.",
-                    MessageType.Info);
-            }
-
-            EditorGUILayout.Space();
+            Undo.RecordObject(settings, undoName);
+            change(settings);
+            EditorUtility.SetDirty(settings);
         }
 
-        private void DrawFormatToggle(LogSettings settings, ExportFormat fmt, string label)
-        {
-            bool enabled = settings.exportFormats.Contains(fmt);
-            bool newEnabled = EditorGUILayout.Toggle(label, enabled);
-            if (newEnabled && !enabled)
-                settings.exportFormats.Add(fmt);
-            else if (!newEnabled && enabled)
-                settings.exportFormats.Remove(fmt);
-        }
-
-
-        public static LogEntryDto SampleDto(LogSettings settings) =>
-            new()
-            {
-                Timestamp = DateTime.Now,
-                Level = settings.logLevel.ToString(),
-                Category = LogCategory.Gameplay.ToString(),
-                Message = $"{settings.messagePrefix} Sample log message",
-                Metadata = new List<MetadataEntry>
-                {
-                    new() { Key = "GameObject", Value = "PlayerPawn" }
-                },
-                Exception = "Preview exception message"
-            };
+        /// <summary>The sample entry shown by the previews (see <see cref="SinkPreview.CreateSample"/>).</summary>
+        public static LogEntryDto SampleDto(LogSettings settings) => SinkPreview.CreateSample(settings);
     }
 }

@@ -1,0 +1,21 @@
+{
+    "name": "EldritchLogger.Console.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:b35f20924db80ad4abd3f24b5643f98e",
+        "GUID:50401b79d441f974995a2b4f4eed2822",
+        "GUID:162055f4e4910a741aab9cfdcf4a5b60",
+        "GUID:75469ad4d38634e559750d17036d5f7c"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,24 +1,48 @@
 # Eldritch Logger
 
-Structured logging framework for Unity. Configurable log levels, categories, structured metadata, and multiple exporters (JSON, XML, Text, Unity Console), managed through a ScriptableObject.
+Structured logging for Unity, with an in-game command console. Game code logs
+through one small interface; a `LogSettings` asset decides which levels and
+categories are written and where they go: the Unity Console, JSON Lines, XML
+or text files, a log server over HTTP, the in-game console, or your own sink.
+
+Logging never throws and never blocks the game. Disabled levels cost nothing,
+file and network writes happen on background threads, and a failing sink is
+reported and skipped. Entries are structured: template holes, scopes and
+enrichers become properties that files, Seq and the Log Viewer can filter by.
+
+See `Documentation~/index.md` for the full guide, `Documentation~/getting-started.md`
+to set it up, `Documentation~/logging.md` for the logging API,
+`Documentation~/runtime-console.md` for the in-game console,
+`Documentation~/editor-tooling.md` for the editor windows and analyzers,
+`Documentation~/architecture.md` for how the pieces fit together, and
+`Documentation~/extending.md` to add sinks, enrichers and commands from your own
+code.
 
 ## Features
 
-- **Log levels:** `Debug` `Info` `Warning` `Error` `Critical`
-- **Built-in categories:** `General` `Gameplay` `UI` `Audio` `Network` `AI` `Physics` `Animation` `Input`
-- **Custom categories:** add named categories in the inspector, assign colors, log against them via string or any user-defined enum
-- Color-coded output in the Unity Console
-- ScriptableObject configuration (`LogSettings`)
-- Fluent builder API — chainable, expressive, zero boilerplate
-- Fire-and-forget API — `.Log()` returns `void`; file exporters run in the background
-- Per-class named loggers — every entry carries `Logger = "ClassName"` for easy filtering
-- SLF4J-style factory (`ELoggerFactory`) with a swappable `ILoggerFactory` back-end
-- Constructor injection support for pure C# classes and DI containers (Zenject, VContainer)
-- Component + GameObject context
-- Event logging for C# delegates and UnityEvents
-- Exception logging with type and message
-- Exporters: JSON, XML, Text file, Unity Console
-- Automatic cleanup of previous session logs
+- **Levels** `Debug` `Info` `Warning` `Error` `Critical`, and **categories**:
+  built-in ones plus any you add in the inspector
+- **Message templates**: `logger.Info("Player {Name} joined", name)` records
+  `Name` as a property
+- **Scopes**: `using (logger.BeginScope("MatchId", id))` tags every entry in
+  the block, across `await`
+- Fluent builder with structured properties, exceptions and clickable context
+  objects
+- Per-class named loggers through `ELoggerFactory`, with a swappable back-end
+- Sinks with their own minimum level: Unity Console, JSON Lines, XML, text,
+  HTTP (JSON, JSON Lines or CLEF for Seq), or your own
+- One file per session with automatic retention; bounded background queues
+- Captures Unity's own errors and uncaught exceptions into your sinks
+- Runtime overrides for level and categories that never touch the asset
+- **Runtime console**: typed commands, autocomplete, history and themes;
+  commands from plain methods (`[ConsoleMethod]`) and console variables
+  (`[ConsoleVariable]`); `log.*` commands; cheat gating; stripped from release
+  builds by default
+- **Editor tooling**: Log Viewer (grouping by template, property filters,
+  clickable stack traces, live file tail), Logger Control window, Console
+  Commands window with a console-variable watch, sink output previews and an
+  HTTP test button, category code generation and unused-category search, and
+  Roslyn analyzers ELG001–ELG006 with quick fixes
 
 ## Installation
 
@@ -27,174 +51,114 @@ Add to `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.eldritchgames.eldritchlogger": "https://github.com/eldritchgames/eldritch-logger.git"
+    "com.eldritchgames.eldritchlogger": "https://github.com/Eldritch-Games-MX/eldritch-logger.git"
   }
 }
 ```
 
-## Setup
+Input System, uGUI (TextMeshPro) and Newtonsoft JSON are installed with it.
 
-1. **Assets → Create → Eldritch Logger → Log Settings** — create a `LogSettings` asset.
-2. Place it in a `Resources` folder: `Assets/Resources/LogSettings.asset`.
-3. Configure in the inspector:
-   - Minimum log level (entries below this level are silently filtered)
-   - Enabled categories (unchecked categories are silently filtered)
-   - **Custom Categories** — type a name and click **Add** to create a new category; set its color and toggle; click **✕** to remove
-   - Export formats: JSON, XML, Text
-   - Export directory and file name
-   - Console options: color coding, stack trace suppression
+## Quick start
 
-> **Note:** The bootstrapper (`LoggerBootstrap`) auto-initializes before the first scene loads using `Resources.Load`. No code required.
-
-## Usage
+1. Open **Edit → Project Settings → Eldritch Logger** and click **Create
+   Assets/Resources/LogSettings.asset**.
+2. Set the minimum level and categories, and add sinks with **Add Sink ▾**.
+   The logger builds itself from this asset before the first scene loads.
+3. Get a logger in `Awake` and log:
 
 ```csharp
 using EldritchGames.EldritchLogger.Core;
-```
 
-### Obtaining a Logger
-
-Each class declares its own named logger. The name stamps `Logger = "ClassName"` on every entry.
-
-**MonoBehaviour — initialize in `Awake` (required):**
-```csharp
 public class PlayerController : MonoBehaviour
 {
     private IEldritchLogger _logger;
 
-    void Awake()
-    {
-        _logger = ELoggerFactory.GetLogger<PlayerController>();
-    }
+    void Awake() => _logger = ELoggerFactory.GetLogger<PlayerController>();
+
+    void Start() => _logger.Info("Player {Name} spawned at {Position}", name, transform.position);
 }
 ```
 
-> Do **not** use a field initializer. Unity runs MonoBehaviour constructors during edit-mode deserialization, before `LoggerBootstrap` registers the factory. The logger would silently be a no-op.
+4. Optional: drag the `Eldritch Console` prefab into the scene, assign a
+   Console Settings asset and a toggle action, and type `help` in Play Mode.
 
-**Pure C# class — constructor injection:**
-```csharp
-public class GameService
-{
-    private readonly IEldritchLogger _logger;
+## Examples
 
-    public GameService(IEldritchLogger logger)
-    {
-        _logger = logger;
-    }
-}
-```
-
-**Dynamic / one-off:**
-```csharp
-var logger = ELoggerFactory.GetLogger("MySubsystem");
-```
-
-### Direct Logging
+### Templates, the builder and exceptions
 
 ```csharp
-_logger.Log(LogLevel.Info,    LogCategory.UI,      "Button clicked");
-_logger.Log(LogLevel.Warning, LogCategory.Network, "Packet dropped");
-_logger.Log(LogLevel.Error,   LogCategory.AI,      "Pathfinding failed");
-```
-
-### Custom Categories
-
-Add categories without touching source. In the `LogSettings` inspector, type a name under **Custom Categories** and click **Add**. Assign a color and toggle it on/off like any built-in category.
-
-Log against them by **string** or by **your own enum**:
-
-```csharp
-// String — quick and direct
-_logger.Log(LogLevel.Info, "Economy", "Player purchased sword");
-
-// Enum — compile-time safe, recommended for larger projects
-public enum GameCategory { Economy, Quests, Systems }
-
-_logger.Log(LogLevel.Debug,   GameCategory.Economy, "Gold overflow detected");
-_logger.Log(LogLevel.Warning, GameCategory.Quests,  "Quest state corrupted");
-```
-
-The enum value's name must exactly match the category name registered in `LogSettings` (case-sensitive). Custom categories respect the enabled toggle and color settings just like built-in ones.
-
-> **Collision guard:** the inspector prevents adding a custom category whose name matches a built-in `LogCategory` enum value.
-
-### Fluent Builder
-
-```csharp
-_logger.AtInfo(LogCategory.Gameplay)
-    .AddKeyValue("ItemId", 42)
-    .AddKeyValue("PlayerId", player.Id)
-    .WithComponent(this)
-    .Log("Player picked up item");
-
-_logger.AtError(LogCategory.AI)
-    .AddKeyValue("State", "Pathfinding")
-    .WithException(new InvalidOperationException("No path found"))
-    .Log("AI navigation failed");
+_logger.Info("Player {Name} took {Damage:0.0} damage", player.Name, damage);
+_logger.Error(ex, "Saving slot {Slot} failed", slot);
 
 _logger.AtWarning(LogCategory.Network)
-    .WithEvent(OnPlayerDeath, nameof(OnPlayerDeath))
-    .Log("Player disconnected during death event");
+    .AddKeyValue("Peer", peer)
+    .WithComponent(this)          // click the entry in the Unity Console to select this object
+    .Log("Lost {Packets} packets", lost);
 ```
 
-### Fluent Builder Reference
-
-| Method                   | Purpose                                                        |
-|--------------------------|----------------------------------------------------------------|
-| `.AddKeyValue(key, val)` | Attach structured metadata (e.g. `"Score": 9001`)             |
-| `.WithException(ex)`     | Attach an exception (type + message)                          |
-| `.WithEvent(evt, name)`  | Attach event context (C# delegate or UnityEvent)              |
-| `.WithComponent(comp)`   | Attach `Component@GameObject` context                         |
-| `.Category(category)`    | Override the log category                                     |
-| `.Log("message")`        | Dispatch — returns `void`, file exporters run in background   |
-
-### Exporters
-
-| Exporter       | Format | Destination                              |
-|----------------|--------|------------------------------------------|
-| Unity Console  | Text   | Always active — Unity Console            |
-| Text Exporter  | `.txt` | `LogSettings.exportDirectory/fileName`  |
-| JSON Exporter  | `.json`| `LogSettings.exportDirectory/fileName`  |
-| XML Exporter   | `.xml` | `LogSettings.exportDirectory/fileName`  |
-
-Export directory defaults to `Application.persistentDataPath` unless overridden in `LogSettings`.
-
-### DI Container Integration
-
-`ELoggerFactory` holds a swappable `ILoggerFactory`. Bind a custom implementation once at startup to redirect all logging through your container:
+### Custom categories
 
 ```csharp
-// Zenject example — call from an Installer
-Container.Bind<ILoggerFactory>().To<EldritchLoggerFactory>().AsSingle();
-ELoggerFactory.SetFactory(Container.Resolve<ILoggerFactory>());
+_logger.Log(LogLevel.Info, "Economy", "Player purchased sword");      // added in the LogSettings inspector
+_logger.AtInfo(LogCategories.LootDrops).Log("Chest opened");          // generated class: typos don't compile
 ```
+
+### Scopes
 
 ```csharp
-// Manual override (tests, custom bootstrap)
-ELoggerFactory.SetFactory(new EldritchLoggerFactory(myRootLogger));
+using (_logger.BeginScope(("MatchId", match.Id), ("Map", match.Map)))
+{
+    _logger.Info("Round {Round} started", round);   // carries MatchId and Map
+    await SpawnWaveAsync();                          // and so does everything logged in here
+}
 ```
 
-`ELoggerFactory.ClearFactory()` resets to the no-op `NullLogger`. Called automatically on application quit.
+### Guarding expensive debug logging
 
-## Troubleshooting
+```csharp
+if (_logger.IsEnabled(LogLevel.Debug, LogCategory.AI))
+    _logger.AtDebug(LogCategory.AI).Log("Path {Path}", string.Join(" → ", path));
+```
 
-**Nothing prints in the Console**
-- Check that `LogSettings.asset` exists at `Assets/Resources/LogSettings.asset`. The bootstrapper logs an error if it can't find it.
-- Verify the minimum **log level** in `LogSettings` — entries below it are silently dropped.
-- Verify the **enabled categories** — all categories must be checked for the corresponding logs to appear.
-- For MonoBehaviours: make sure the logger is initialized in `Awake()`, not as a field initializer.
+### Runtime control
 
-**Custom category logs not appearing**
-- Confirm the category name is registered in `LogSettings` under **Custom Categories** and its toggle is enabled.
-- When using an enum, verify `MyEnum.Value.ToString()` matches the registered name exactly — it is case-sensitive.
-- Custom categories added at runtime are not persisted; they must be registered in the `LogSettings` asset.
+```csharp
+ELoggerFactory.Control.MinimumLevelOverride = LogLevel.Debug;   // this session only
+ELoggerFactory.Control.SetCategoryOverride(LogCategory.AI, false);
+```
 
-**File exports not created**
-- Enable at least one export format in `LogSettings`.
-- Check `exportDirectory` — by default it writes to `Application.persistentDataPath`.
+Or from the in-game console: `log.level debug`, `log.category AI off`, `log.reset`.
 
-**DI container: logs appear as no-ops**
-- Call `ELoggerFactory.SetFactory(...)` before any MonoBehaviour `Awake` runs.
+### A console command from a method
+
+```csharp
+public static class DebugCommands
+{
+    [ConsoleMethod("give", "Adds an item to the player.")]
+    static string Give(string item, int amount = 1) => Inventory.Add(item, amount);
+
+    [ConsoleVariable("timescale", "Game speed.", Min = 0, Max = 10)]
+    static float TimeScale { get => Time.timeScale; set => Time.timeScale = value; }
+}
+```
+
+### A custom sink
+
+```csharp
+public sealed class AnalyticsSink : ILogSink
+{
+    public string Name => "Analytics";
+    public LogLevel MinimumLevel => LogLevel.Error;
+    public void Emit(LogEntryDto entry) => Analytics.Queue(entry.Category, entry.Message);
+}
+
+[Serializable]
+public sealed class AnalyticsSinkConfig : LogSinkConfig   // appears in Add Sink ▾
+{
+    public override string DisplayName => "Analytics";
+    public override ILogSink CreateSink(SinkBuildContext context) => new AnalyticsSink();
+}
+```
 
 ## Samples
 

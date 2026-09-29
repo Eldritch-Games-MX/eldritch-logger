@@ -1,76 +1,19 @@
-using EldritchGames.EldritchLogger.Builder;
-using System;
-using System.Collections.Generic;
-using UnityEngine;
+using EldritchGames.EldritchLogger.Domain;
 
 namespace EldritchGames.EldritchLogger.Core
 {
     /// <summary>
-    /// No-op implementation of <see cref="IEldritchLogger"/>.
-    /// All methods are silent and allocation-free.
+    /// A logger that discards everything. Returned by <see cref="ELoggerFactory"/> before a
+    /// factory is registered.
     /// </summary>
-    /// <remarks>
-    /// Returned by <see cref="ELoggerFactory.GetLogger(string)"/> when no factory has been
-    /// registered yet — for example, during edit-mode execution or in tests that do not
-    /// call <see cref="ELoggerFactory.SetFactory"/>.
-    /// Consumers never need to null-check the result of <see cref="ELoggerFactory.GetLogger{T}"/>;
-    /// if the factory is absent they silently get this object instead.
-    /// </remarks>
     public sealed class NullLogger : IEldritchLogger
     {
-        /// <summary>Shared singleton instance. Use this instead of constructing a new one.</summary>
-        public static readonly NullLogger Instance = new NullLogger();
+        public static readonly NullLogger Instance = new();
 
         private NullLogger() { }
 
-        /// <inheritdoc/>
-        public void Log(LogLevel level, LogCategory category, string message,
-                        Dictionary<string, object> metadata = null, Exception exception = null) { }
+        public bool IsEnabled(LogLevel level, LogCategory category) => false;
 
-        /// <inheritdoc/>
-        public void Log(LogLevel level, string categoryName, string message,
-                        Dictionary<string, object> metadata = null, Exception exception = null) { }
-
-        /// <inheritdoc/>
-        public void Log(LogLevel level, Enum category, string message,
-                        Dictionary<string, object> metadata = null, Exception exception = null) { }
-
-        /// <inheritdoc/>
-        public ILogBuilder AtDebug(LogCategory category = LogCategory.General)
-            => NullLogBuilder.Instance;
-
-        /// <inheritdoc/>
-        public ILogBuilder AtInfo(LogCategory category = LogCategory.General)
-            => NullLogBuilder.Instance;
-
-        /// <inheritdoc/>
-        public ILogBuilder AtWarning(LogCategory category = LogCategory.General)
-            => NullLogBuilder.Instance;
-
-        /// <inheritdoc/>
-        public ILogBuilder AtError(LogCategory category = LogCategory.General)
-            => NullLogBuilder.Instance;
-
-        /// <inheritdoc/>
-        public ILogBuilder AtCritical(LogCategory category = LogCategory.General)
-            => NullLogBuilder.Instance;
-    }
-
-    /// <summary>
-    /// No-op <see cref="ILogBuilder"/> returned by <see cref="NullLogger"/>.
-    /// All chain calls return the same singleton; <see cref="Log"/> is a no-op.
-    /// </summary>
-    internal sealed class NullLogBuilder : ILogBuilder
-    {
-        internal static readonly NullLogBuilder Instance = new NullLogBuilder();
-
-        private NullLogBuilder() { }
-
-        public ILogBuilder Category(LogCategory category) => this;
-        public ILogBuilder AddKeyValue(string key, object value) => this;
-        public ILogBuilder WithException(Exception ex) => this;
-        public ILogBuilder WithEvent(object eventObj, string eventName) => this;
-        public ILogBuilder WithComponent(Component component) => this;
-        public void Log(string message) { }
+        public void Log(LogEntry entry) { }
     }
 }

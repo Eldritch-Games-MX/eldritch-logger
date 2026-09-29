@@ -1,149 +1,139 @@
 using EldritchGames.EldritchLogger.Core;
-using EldritchGames.EldritchLogger.Visuals;
+using EldritchGames.EldritchLogger.Sinks.Config;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Settings
 {
+    /// <summary>
+    /// Logger configuration asset: filtering, formatting and the list of sinks.
+    /// Presets live in <see cref="LogSettingsPresets"/>.
+    /// </summary>
     [CreateAssetMenu(fileName = "LogSettings", menuName = "Eldritch Logger/Log Settings", order = 0)]
-    public class LogSettings : ScriptableObject
+    public class LogSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public LogLevel logLevel = LogLevel.Debug;
-        public List<LogCategory> enabledCategories = new List<LogCategory>
-        {
-            LogCategory.General,
-            LogCategory.Network,
-            LogCategory.UI,
-            LogCategory.Audio,
-            LogCategory.Physics,
-            LogCategory.AI,
-            LogCategory.Animation,
-            LogCategory.Input,
-        };
+        [Tooltip("Entries below this level are discarded before reaching any sink.")]
+        public LogLevel minimumLevel = LogLevel.Debug;
 
-        [Tooltip("If enabled, previous session logs will be cleared on startup.")]
-        public bool clearOnStartup = true;
+        [Tooltip("Built-in and custom categories. Entries in unknown or disabled categories are discarded.")]
+        public List<CategorySetting> categories = CreateDefaultCategories();
 
-        public string timestampFormat = "HH:mm:ss";   // default format
-        public string messagePrefix = "";             // optional prefix
+        [Header("Formatting")]
+        public bool useCategoryColors = true;
+        public string timestampFormat = "HH:mm:ss";
+        public string messagePrefix = "";
 
-        // Export options
-        public bool enableExport = false;
-        public List<ExportFormat> exportFormats { get; set; } = new();
-        public string exportFileName = "eldritch_logs";
-        public string exportDirectory = ""; // default to Application.persistentDataPath if empty
-
-        [Header("Context Objects")]
-        public bool useContextObjects = true;
-
-        [Header("Stack Trace")]
-        [Tooltip("Suppress Unity's automatic stack trace output. EldritchLogger will handle exception traces itself.")]
-        public bool suppressUnityStackTrace = true;
-
-        [Header("Exception Filtering")]
         [Tooltip("Remove EldritchLogger internal frames from exception stack traces.")]
         public bool filterLoggerFrames = true;
 
-        [Header("Category Colors")]
-        public bool useCategoryColors = true;
-        public List<CategoryColor> categoryColors = new List<CategoryColor>
+        [Header("Sinks")]
+        [SerializeReference]
+        public List<LogSinkConfig> sinks = new() { new UnityConsoleSinkConfig() };
+
+        [Header("Unity Log Capture")]
+        [Tooltip("Forward Unity's own messages (Debug.Log, engine errors, uncaught exceptions) into the logger under the 'Unity' category, so they reach file and remote sinks.")]
+        public Pipeline.UnityLogCapture captureUnityLogs = Pipeline.UnityLogCapture.ErrorsAndExceptions;
+
+        [Header("Bootstrap")]
+        [Tooltip("Create the logger automatically before the first scene loads.")]
+        public bool autoInitialize = true;
+
+        [NonSerialized] private Dictionary<string, CategorySetting> lookup;
+
+        /// <summary>Default colors of <see cref="LogCategory.BuiltIn"/>, in the same order.</summary>
+        private static readonly Color[] BuiltInColors =
         {
-            new CategoryColor(LogCategory.General, Color.white),
-            new CategoryColor(LogCategory.Gameplay, Color.green),
-            new CategoryColor(LogCategory.UI, Color.blue),
-            new CategoryColor(LogCategory.Audio, Color.yellow),
-            new CategoryColor(LogCategory.Network, Color.magenta),
-            new CategoryColor(LogCategory.AI, Color.cyan),
-            new CategoryColor(LogCategory.Physics, new Color(1f, 0.5f, 0f)),
-            new CategoryColor(LogCategory.Animation, new Color(0.5f, 0f, 0.5f)),
-            new CategoryColor(LogCategory.Input, new Color(0f, 0.5f, 0f))
+            Color.white, Color.green, Color.blue, Color.yellow, Color.magenta, Color.cyan,
+            new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 0.5f), new Color(0f, 0.5f, 0f), Color.gray
         };
 
-        [Header("Custom Categories")]
-        public List<CustomCategoryEntry> customCategories = new List<CustomCategoryEntry>();
-
-        public Color GetCategoryColor(LogCategory category)
+        public static List<CategorySetting> CreateDefaultCategories()
         {
-            var entry = categoryColors.Find(c => c.category == category);
-            return entry != null ? entry.color : Color.white;
+            var list = new List<CategorySetting>();
+            for (int i = 0; i < LogCategory.BuiltIn.Count; i++)
+                list.Add(new CategorySetting(LogCategory.BuiltIn[i].Name, BuiltInColors[i]));
+            return list;
         }
 
-        public Color GetCustomCategoryColor(string name)
+        /// <summary>
+        /// Adds any built-in category missing from <see cref="categories"/> (enabled, default color), e.g. one
+        /// introduced by a newer package version. Built-ins cannot be removed, so the list stays complete.
+        /// </summary>
+        /// <returns>True if categories were added.</returns>
+        public bool EnsureBuiltInCategories()
         {
-            var entry = customCategories.Find(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
-            return entry != null ? entry.color : Color.white;
+            categories ??= new List<CategorySetting>();
+            bool added = false;
+            for (int i = 0; i < LogCategory.BuiltIn.Count; i++)
+            {
+                var name = LogCategory.BuiltIn[i].Name;
+                if (categories.Exists(c => c != null && string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                categories.Add(new CategorySetting(name, BuiltInColors[i]));
+                added = true;
+            }
+            if (added) InvalidateCache();
+            return added;
         }
 
-        public bool IsCategoryEnabled(LogCategory category) => enabledCategories.Contains(category);
-
-        public bool IsCustomCategoryEnabled(string name)
+        public CategorySetting FindCategory(LogCategory category)
         {
-            var entry = customCategories.Find(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
-            return entry != null && entry.enabled;
+            var map = lookup;
+            if (map == null)
+            {
+                map = new Dictionary<string, CategorySetting>(StringComparer.OrdinalIgnoreCase);
+                if (categories != null)
+                    foreach (var entry in categories)
+                        if (entry != null && !string.IsNullOrWhiteSpace(entry.name))
+                            map[entry.name] = entry;
+                lookup = map;
+            }
+
+            return map.TryGetValue(category.Name, out var setting) ? setting : null;
         }
 
-        public bool AddCustomCategory(string name, Color color)
+        public bool IsCategoryEnabled(LogCategory category) => FindCategory(category)?.enabled ?? false;
+
+        public Color GetCategoryColor(LogCategory category) => FindCategory(category)?.color ?? Color.white;
+
+        /// <summary>Registers a category. Returns false if the name is empty or already registered.</summary>
+        public bool AddCategory(string name, Color color)
         {
             if (string.IsNullOrWhiteSpace(name)) return false;
-            if (Enum.TryParse<LogCategory>(name, true, out _)) return false;
-            if (customCategories.Any(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))) return false;
-            customCategories.Add(new CustomCategoryEntry(name, color));
+            if (FindCategory(new LogCategory(name)) != null) return false;
+
+            categories.Add(new CategorySetting(name.Trim(), color));
+            InvalidateCache();
             return true;
         }
 
-        public void RemoveCustomCategory(string name)
+        /// <summary>Removes a custom category. Built-in categories cannot be removed.</summary>
+        public bool RemoveCategory(string name)
         {
-            customCategories.RemoveAll(c => string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            int removed = categories.RemoveAll(c =>
+                !c.IsBuiltIn && string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase));
+            InvalidateCache();
+            return removed > 0;
         }
 
-        public void ApplyVerbosePreset()
+        public void SetAllCategoriesEnabled(bool enabled)
         {
-            logLevel = LogLevel.Debug;
-            EnableAllCategories();
+            foreach (var c in categories) c.enabled = enabled;
         }
 
-        public void ApplyNormalPreset()
-        {
-            logLevel = LogLevel.Info;
-            enabledCategories = new List<LogCategory>
-            {
-                LogCategory.Gameplay,
-                LogCategory.UI,
-                LogCategory.Network
-            };
-        }
+        /// <summary>Call after editing <see cref="categories"/> directly (adding, removing or renaming entries).</summary>
+        public void InvalidateCache() => lookup = null;
 
-        public void ApplyProductionPreset()
-        {
-            logLevel = LogLevel.Warning;
-            enabledCategories = new List<LogCategory>
-            {
-                LogCategory.Gameplay,
-                LogCategory.Network
-            };
-        }
+        private void OnValidate() => InvalidateCache();
 
-        public void EnableAllCategories()
-        {
-            enabledCategories = new List<LogCategory>(
-                (LogCategory[])Enum.GetValues(typeof(LogCategory)));
-            foreach (var c in customCategories) c.enabled = true;
-        }
+        public void OnBeforeSerialize() { }
 
-        public void DisableAllCategories()
+        public void OnAfterDeserialize()
         {
-            enabledCategories.Clear();
-            foreach (var c in customCategories) c.enabled = false;
+            InvalidateCache();
+            EnsureBuiltInCategories();
         }
-    }
-
-    public enum ExportFormat
-    {
-        None,
-        Json,
-        Xml,
-        Text
     }
 }

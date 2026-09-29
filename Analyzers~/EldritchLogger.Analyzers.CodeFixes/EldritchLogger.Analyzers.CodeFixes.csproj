@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Code fixes for the rules in EldritchLogger.Analyzers. A separate DLL: it needs Roslyn's Workspaces layer,
+         which IDEs provide but Unity's compiler does not, and the compiler never loads code fix types. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <PackageAnalyzerDir>$(MSBuildThisFileDirectory)..\..\Runtime\Analyzers\</PackageAnalyzerDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="CopyToPackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackageAnalyzerDir)" />
+  </Target>
+
+</Project>

@@ -12,13 +12,53 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 23230d4de7466784ba61a21c19873751, type: 3}
   m_Name: LogSettings
   m_EditorClassIdentifier: EldritchLogger::LogSettings
-  logLevel: 0
-  enabledCategories: 000000000400000002000000030000000600000005000000070000000800000001000000
+  minimumLevel: 0
+  categories:
+  - name: General
+    color: {r: 1, g: 1, b: 1, a: 1}
+    enabled: 1
+  - name: Gameplay
+    color: {r: 0, g: 1, b: 0, a: 1}
+    enabled: 1
+  - name: UI
+    color: {r: 0, g: 0, b: 1, a: 1}
+    enabled: 1
+  - name: Audio
+    color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+    enabled: 1
+  - name: Network
+    color: {r: 1, g: 0, b: 1, a: 1}
+    enabled: 1
+  - name: AI
+    color: {r: 0, g: 1, b: 1, a: 1}
+    enabled: 1
+  - name: Physics
+    color: {r: 1, g: 0.5, b: 0, a: 1}
+    enabled: 1
+  - name: Animation
+    color: {r: 0.5, g: 0, b: 0.5, a: 1}
+    enabled: 1
+  - name: Input
+    color: {r: 0, g: 0.5, b: 0, a: 1}
+    enabled: 1
+  - name: Unity
+    color: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    enabled: 1
+  useCategoryColors: 1
   timestampFormat: HH:mm:ss
   messagePrefix: 
-  enableExport: 1
-  exportFileName: eldritch_logs
-  exportDirectory: 
-  useContextObjects: 1
-  suppressUnityStackTrace: 0
   filterLoggerFrames: 1
+  sinks:
+  - rid: 1802470727312736256
+  captureUnityLogs: 1
+  autoInitialize: 1
+  references:
+    version: 2
+    RefIds:
+    - rid: 1802470727312736256
+      type: {class: UnityConsoleSinkConfig, ns: EldritchGames.EldritchLogger.Sinks.Config, asm: EldritchLogger}
+      data:
+        enabled: 1
+        minimumLevel: 0
+        useContextObjects: 1
+        suppressUnityStackTrace: 0

@@ -82,5 +82,18 @@ namespace EldritchGames.EldritchLogger.Core
         {
             return _factory?.GetLogger(name) ?? NullLogger.Instance;
         }
+
+        /// <summary>
+        /// The sink registry of the active factory, used to attach extra sinks at runtime
+        /// (e.g. the in-game console).
+        /// Null when no factory is registered or the factory does not support sink registration.
+        /// </summary>
+        public static ISinkRegistry Sinks => _factory as ISinkRegistry;
+
+        /// <summary>
+        /// Runtime control (level and category overrides, flushing) of the installed logger.
+        /// Null when no factory is registered or its logger does not support it.
+        /// </summary>
+        public static ILogControl Control => (_factory as EldritchLoggerFactory)?.Control;
     }
 }

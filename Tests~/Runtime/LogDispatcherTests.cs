@@ -1,58 +1,55 @@
 using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
-using EldritchGames.EldritchLogger.Exporting;
-using Moq;
+using EldritchGames.EldritchLogger.Pipeline;
+using EldritchGames.EldritchLogger.Sinks;
 using NUnit.Framework;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
-    [TestFixture]
     public class LogDispatcherTests
     {
-        [Test]
-        public void Dispatch_ShouldCallSyncSinkImmediately()
+        private sealed class ProbeSink : ILogSink
         {
-            var syncSink = new Mock<ILogSink>();
-            var dispatcher = new LogDispatcher();
-            var dto = new LogEntryDto { Message = "Hello" };
-
-            dispatcher.Dispatch(dto, new ILogSink[] { syncSink.Object });
-
-            syncSink.Verify(s => s.OnLogReceived(It.Is<LogEntryDto>(d => d.Message == "Hello")), Times.Once);
+            public bool SawDispatching;
+            public string Name => "Probe";
+            public LogLevel MinimumLevel => LogLevel.Debug;
+            public void Emit(LogEntryDto entry) => SawDispatching = LogDispatcher.IsDispatching;
         }
 
         [Test]
-        public void Dispatch_ShouldFireAndForgetAsyncSink()
+        public void IsDispatching_IsTrueOnlyWhileSinksRun()
         {
-            var asyncSink = new Mock<IAsyncLogExporter>();
-            asyncSink.Setup(s => s.Export(It.IsAny<LogEntryDto>(), It.IsAny<string>()))
-                     .Returns(Task.CompletedTask);
+            var probe = new ProbeSink();
 
-            var dispatcher = new LogDispatcher();
-            var dto = new LogEntryDto { Message = "Hello" };
+            new LogDispatcher().Dispatch(new LogEntryDto(), new ILogSink[] { probe });
 
-            dispatcher.Dispatch(dto, new ILogSink[] { asyncSink.Object });
-
-            // Task.CompletedTask is already done so ExportAsync runs synchronously in test context
-            asyncSink.Verify(s => s.Export(It.Is<LogEntryDto>(d => d.Message == "Hello"), It.IsAny<string>()), Times.Once);
+            Assert.That(probe.SawDispatching, Is.True);
+            Assert.That(LogDispatcher.IsDispatching, Is.False);
         }
 
         [Test]
-        public void Dispatch_ShouldCallBothSyncAndAsyncSinks()
+        public void ThrowingSink_IsReported_AndStateIsReset()
         {
-            var syncSink  = new Mock<ILogSink>();
-            var asyncSink = new Mock<IAsyncLogExporter>();
-            asyncSink.Setup(s => s.Export(It.IsAny<LogEntryDto>(), It.IsAny<string>()))
-                     .Returns(Task.CompletedTask);
+            using var capture = new SelfLogCapture();
+            var after = new RecordingSink();
 
-            var dispatcher = new LogDispatcher();
-            var dto = new LogEntryDto { Message = "Hello" };
+            new LogDispatcher().Dispatch(new LogEntryDto(), new ILogSink[] { new ThrowingSink(), after });
 
-            dispatcher.Dispatch(dto, new ILogSink[] { syncSink.Object, asyncSink.Object });
+            Assert.That(after.Entries, Has.Count.EqualTo(1));
+            Assert.That(capture.Messages, Has.Count.EqualTo(1));
+            Assert.That(LogDispatcher.IsDispatching, Is.False);
+        }
 
-            syncSink.Verify(s => s.OnLogReceived(It.Is<LogEntryDto>(d => d.Message == "Hello")), Times.Once);
-            asyncSink.Verify(s => s.Export(It.Is<LogEntryDto>(d => d.Message == "Hello"), It.IsAny<string>()), Times.Once);
+        [Test]
+        public void SinksBelowTheirMinimumLevel_AreSkipped()
+        {
+            var errors = new RecordingSink(LogLevel.Error);
+
+            new LogDispatcher().Dispatch(new LogEntryDto { Level = LogLevel.Warning }, new ILogSink[] { errors });
+
+            Assert.That(errors.Entries, Is.Empty);
         }
     }
 }

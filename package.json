@@ -1,12 +1,17 @@
 {
   "name": "com.eldritchgames.eldritchlogger",
   "displayName": "Eldritch Logger",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "unity": "6000.0",
-  "description": "A configurable logging framework for Unity featuring structured log levels, category-based filtering, and color-coded output. Includes ScriptableObject-driven settings with quick presets, per-category toggles, and advanced options like custom timestamp formats and message prefixes. The custom editor provides live previews, color indicators, and one-click configuration for development, QA, and production environments.",
+  "description": "A configurable logging framework for Unity featuring structured log levels, category-based filtering, and color-coded output. Includes ScriptableObject-driven settings with quick presets, per-category toggles, and advanced options like custom timestamp formats and message prefixes. The custom editor provides live previews, color indicators, and one-click configuration for development, QA, and production environments. Ships with an in-game command console (Eldritch Console) that displays logger output at runtime and supports extensible commands, autocompletion, history, and themes.",
   "author": {
     "name": "Carlos Alberto Garcia de Alba Chavez",
     "email": "carlosga@eldritchgames.com.mx"
+  },
+  "dependencies": {
+    "com.unity.inputsystem": "1.19.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.ugui": "2.0.0"
   },
   "samples": [
     {

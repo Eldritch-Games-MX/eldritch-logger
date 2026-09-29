@@ -41,6 +41,8 @@
 ExportedObj/
 .consulo/
 *.csproj
+# The analyzer projects are real source projects, not Unity-generated ones
+!Analyzers~/**/*.csproj
 *.unityproj
 *.sln
 *.suo
@@ -97,3 +99,7 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Analyzer build output
+Analyzers~/**/bin/
+Analyzers~/**/obj/
