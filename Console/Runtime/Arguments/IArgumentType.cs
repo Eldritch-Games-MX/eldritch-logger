@@ -28,7 +28,10 @@ namespace EldritchGames.EldritchLogger.Console.Arguments
         public static readonly IArgumentType PositiveInt = new IntArgumentType("int+", 1);
         public static readonly IArgumentType NonNegativeInt = new IntArgumentType("int", 0);
         public static readonly IArgumentType Float = new FloatArgumentType();
-        public static readonly IArgumentType Bool = new ChoiceArgumentType("bool", () => new[] { "true", "false" });
+        public static readonly IArgumentType Double = new DoubleArgumentType();
+
+        /// <summary>A <c>bool</c>: true/false, on/off, yes/no, 1/0.</summary>
+        public static readonly IArgumentType Bool = new BoolArgumentType();
 
         /// <summary>One of a dynamic set of values (e.g. theme names). Comparison is case-insensitive.</summary>
         public static IArgumentType Choice(string name, Func<IEnumerable<string>> values) => new ChoiceArgumentType(name, values);
@@ -91,7 +94,8 @@ namespace EldritchGames.EldritchLogger.Console.Arguments
 
         public bool TryParse(string raw, out object value, out string error)
         {
-            if (float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            // NaN and infinities parse, but no command wants them (and NaN slips through every range check).
+            if (float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && float.IsFinite(parsed))
             {
                 value = parsed;
                 error = null;
@@ -103,6 +107,52 @@ namespace EldritchGames.EldritchLogger.Console.Arguments
         }
 
         public IEnumerable<string> Suggest(string prefix) => Enumerable.Empty<string>();
+    }
+
+    internal sealed class DoubleArgumentType : IArgumentType
+    {
+        public string Name => "double";
+
+        public bool TryParse(string raw, out object value, out string error)
+        {
+            // NaN and infinities parse, but no command wants them (and NaN slips through every range check).
+            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && double.IsFinite(parsed))
+            {
+                value = parsed;
+                error = null;
+                return true;
+            }
+            value = null;
+            error = $"'{raw}' is not a number.";
+            return false;
+        }
+
+        public IEnumerable<string> Suggest(string prefix) => Enumerable.Empty<string>();
+    }
+
+    internal sealed class BoolArgumentType : IArgumentType
+    {
+        private static readonly string[] Names = { "true", "false" };
+
+        public string Name => "bool";
+
+        public bool TryParse(string raw, out object value, out string error)
+        {
+            switch (raw?.Trim().ToLowerInvariant())
+            {
+                case "true": case "on": case "yes": case "1":
+                    value = true; error = null; return true;
+                case "false": case "off": case "no": case "0":
+                    value = false; error = null; return true;
+                default:
+                    value = null;
+                    error = $"'{raw}' is not a bool. Use true/false, on/off, yes/no or 1/0.";
+                    return false;
+            }
+        }
+
+        public IEnumerable<string> Suggest(string prefix) =>
+            Names.Where(n => n.StartsWith(prefix ?? string.Empty, StringComparison.OrdinalIgnoreCase));
     }
 
     internal sealed class ChoiceArgumentType : IArgumentType

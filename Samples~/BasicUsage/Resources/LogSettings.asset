@@ -41,12 +41,16 @@ MonoBehaviour:
   - name: Input
     color: {r: 0, g: 0.5, b: 0, a: 1}
     enabled: 1
+  - name: Unity
+    color: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    enabled: 1
   useCategoryColors: 1
   timestampFormat: HH:mm:ss
   messagePrefix: 
   filterLoggerFrames: 1
   sinks:
   - rid: 1802470727312736256
+  captureUnityLogs: 1
   autoInitialize: 1
   references:
     version: 2

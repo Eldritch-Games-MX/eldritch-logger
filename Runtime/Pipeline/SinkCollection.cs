@@ -11,16 +11,36 @@ namespace EldritchGames.EldritchLogger.Pipeline
     /// </summary>
     public sealed class SinkCollection : ISinkRegistry
     {
+        /// <summary>Both lists swap together, so a reader never sees one updated without the other.</summary>
+        private sealed class State
+        {
+            public readonly ILogSink[] All;
+            public readonly ILogSink[] ForUnityEntries;
+
+            public State(ILogSink[] all)
+            {
+                All = all;
+                ForUnityEntries = Array.FindAll(all, s => s is not IShowsUnityLog);
+            }
+        }
+
         private readonly object writeLock = new();
-        private ILogSink[] snapshot;
+        private State state;
+        private ILogSink[] snapshot => state.All;
 
         public SinkCollection(IEnumerable<ILogSink> initial = null)
         {
-            snapshot = initial != null ? new List<ILogSink>(initial).ToArray() : Array.Empty<ILogSink>();
+            state = new State(initial != null ? new List<ILogSink>(initial).ToArray() : Array.Empty<ILogSink>());
         }
 
         /// <summary>The current sinks. The returned array must not be modified.</summary>
-        public IReadOnlyList<ILogSink> Snapshot => System.Threading.Volatile.Read(ref snapshot);
+        public IReadOnlyList<ILogSink> Snapshot => System.Threading.Volatile.Read(ref state).All;
+
+        /// <summary>
+        /// The current sinks minus <see cref="IShowsUnityLog"/> ones: the targets for entries captured from
+        /// Unity's own log, which those sinks already show.
+        /// </summary>
+        public IReadOnlyList<ILogSink> SnapshotForUnityEntries => System.Threading.Volatile.Read(ref state).ForUnityEntries;
 
         IReadOnlyList<ILogSink> ISinkRegistry.All => Snapshot;
 
@@ -48,7 +68,7 @@ namespace EldritchGames.EldritchLogger.Pipeline
                 var next = new ILogSink[snapshot.Length + 1];
                 snapshot.CopyTo(next, 0);
                 next[^1] = sink;
-                System.Threading.Volatile.Write(ref snapshot, next);
+                System.Threading.Volatile.Write(ref state, new State(next));
             }
         }
 
@@ -62,7 +82,7 @@ namespace EldritchGames.EldritchLogger.Pipeline
                 var next = new ILogSink[snapshot.Length - 1];
                 Array.Copy(snapshot, 0, next, 0, index);
                 Array.Copy(snapshot, index + 1, next, index, snapshot.Length - index - 1);
-                System.Threading.Volatile.Write(ref snapshot, next);
+                System.Threading.Volatile.Write(ref state, new State(next));
             }
         }
     }

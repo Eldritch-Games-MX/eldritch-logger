@@ -1,4 +1,6 @@
 using EldritchGames.EldritchLogger.Console.Commands;
+using EldritchGames.EldritchLogger.Console.Commands.BuiltIn;
+using EldritchGames.EldritchLogger.Console.Output;
 using EldritchGames.EldritchLogger.Console.Registry;
 using EldritchGames.EldritchLogger.Console.Services;
 using EldritchGames.EldritchLogger.Console.UI;
@@ -94,6 +96,39 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
             Assert.That(CommandDiscovery.GroupTypes, Does.Contain(typeof(EldritchGames.EldritchLogger.Console.Commands.BuiltIn.CoreCommandGroup)));
             Assert.That(CommandDiscovery.CommandTypes, Has.No.Member(typeof(AttributedCommand)));
             Assert.That(CommandDiscovery.GroupTypes, Has.No.Member(typeof(NeedsView)));
+        }
+
+        public sealed class TwoConstructors
+        {
+            public readonly string Used;
+            public TwoConstructors() => Used = "empty";
+            public TwoConstructors(IConsoleOutput output) => Used = "output";
+            public TwoConstructors(IConsoleOutput output, IDisposable missing) => Used = "missing";
+        }
+
+        [Test]
+        public void TryCreate_PicksTheLargestSatisfiableConstructor()
+        {
+            var services = new ConsoleServiceProvider().Register<IConsoleOutput>(new RecordingOutput());
+
+            Assert.That(services.TryCreate(typeof(TwoConstructors), out var instance, out _), Is.True);
+            Assert.That(((TwoConstructors)instance).Used, Is.EqualTo("output"));
+            Assert.That(services.Get<IConsoleOutput>(), Is.Not.Null);
+            Assert.That(services.RegisteredTypes, Does.Contain(typeof(IConsoleOutput)));
+
+            services.Clear();
+            Assert.That(services.IsRegistered(typeof(IConsoleOutput)), Is.False);
+        }
+
+        [Test]
+        public void TryCreate_ReportsTypesWithoutPublicConstructors()
+        {
+            Assert.That(new ConsoleServiceProvider().TryCreate(typeof(StaticOnly), out _, out var missing), Is.False);
+            Assert.That(missing, Is.EqualTo("a public constructor"));
+        }
+
+        private static class StaticOnly
+        {
         }
     }
 }

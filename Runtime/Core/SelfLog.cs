@@ -15,6 +15,12 @@ namespace EldritchGames.EldritchLogger.Core
         [ThreadStatic] private static bool reporting;
         private static int reportCount;
 
+        /// <summary>
+        /// True while the current thread is writing a SelfLog report. Unity log listeners inside the package
+        /// (e.g. the Unity log forwarder) use it to avoid feeding the logger's own diagnostics back into it.
+        /// </summary>
+        public static bool IsReporting => reporting;
+
         /// <summary>Maximum number of reports per session, to avoid flooding the console.</summary>
         public static int MaxReports { get; set; } = 100;
 

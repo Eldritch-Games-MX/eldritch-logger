@@ -25,6 +25,7 @@ namespace EldritchGames.EldritchLogger.EditorTools
         private SerializedProperty filterLoggerFrames;
         private SerializedProperty sinks;
         private SerializedProperty autoInitialize;
+        private SerializedProperty captureUnityLogs;
 
         private bool showAdvanced;
         private string newCategoryName = "";
@@ -39,6 +40,7 @@ namespace EldritchGames.EldritchLogger.EditorTools
             filterLoggerFrames = serializedObject.FindProperty(nameof(LogSettings.filterLoggerFrames));
             sinks = serializedObject.FindProperty(nameof(LogSettings.sinks));
             autoInitialize = serializedObject.FindProperty(nameof(LogSettings.autoInitialize));
+            captureUnityLogs = serializedObject.FindProperty(nameof(LogSettings.captureUnityLogs));
         }
 
         public override void OnInspectorGUI()
@@ -56,6 +58,7 @@ namespace EldritchGames.EldritchLogger.EditorTools
 
             serializedObject.Update();
             DrawSinks();
+            DrawUnityCapture(settings);
             DrawAdvanced();
             serializedObject.ApplyModifiedProperties();
 
@@ -270,6 +273,27 @@ namespace EldritchGames.EldritchLogger.EditorTools
             }
 
             menu.ShowAsContext();
+        }
+
+        private void DrawUnityCapture(LogSettings settings)
+        {
+            EditorGUILayout.PropertyField(captureUnityLogs, new GUIContent("Capture Unity Logs",
+                "Forward Unity's own messages (Debug.Log, engine errors, uncaught exceptions) into the logger under the 'Unity' category."));
+
+            if (settings.captureUnityLogs != Pipeline.UnityLogCapture.Off && !settings.IsCategoryEnabled(LogCategory.Unity))
+            {
+                EditorGUILayout.HelpBox("The 'Unity' category is missing or disabled, so captured messages are discarded.", MessageType.Warning);
+                if (GUILayout.Button("Enable 'Unity' category"))
+                {
+                    Modify(settings, "Enable Unity Category", s =>
+                    {
+                        if (!s.AddCategory(LogCategory.Unity.Name, Color.gray))
+                            s.FindCategory(LogCategory.Unity).enabled = true;
+                    });
+                    CategoryCodeGeneration.GenerateIfEnabled(settings);
+                }
+            }
+            EditorGUILayout.Space();
         }
 
         private void DrawAdvanced()

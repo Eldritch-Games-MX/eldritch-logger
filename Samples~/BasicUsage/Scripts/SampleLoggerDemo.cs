@@ -58,6 +58,20 @@ public class SampleLoggerDemo : MonoBehaviour
             .AddKeyValue(SampleLogConstants.PLAYER, 99)
             .Log("Critical gameplay failure!");
 
+        // --- Message templates: each {Hole} becomes a property ---
+        _logger.Info("{Player} picked up {Item} x{Amount}",
+            SampleLogConstants.PLAYER, SampleLogConstants.ITEM_POTION, 3);
+
+        _logger.AtWarning(LogCategory.Network)
+            .Log("Latency {LatencyMs:0.0} ms to {Region}", 182.4f, "eu-west");
+
+        // --- Scopes: properties added to every entry inside the block ---
+        using (_logger.BeginScope(("MatchId", "match-042"), ("Map", "Crypt")))
+        {
+            _logger.Info("Round {Round} started", 1);
+            _logger.AtInfo(LogCategory.Gameplay).Log("{Enemy} spawned", SampleLogConstants.ENEMY_SKELETON);
+        }
+
         // --- Contextual logging with GameObject ---
         _logger.AtInfo(LogCategory.Gameplay)
             .WithComponent(this)

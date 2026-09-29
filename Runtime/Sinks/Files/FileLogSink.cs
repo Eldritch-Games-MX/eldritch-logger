@@ -14,6 +14,7 @@ namespace EldritchGames.EldritchLogger.Sinks.Files
 
         public string Name { get; }
         public LogLevel MinimumLevel { get; }
+        /// <summary>The file being written.</summary>
         public string Path => writer.Path;
         string ISinkDiagnostics.Location => writer.Path;
         public long DroppedCount => writer.DroppedCount;
@@ -25,10 +26,10 @@ namespace EldritchGames.EldritchLogger.Sinks.Files
             writer = new BackgroundLogWriter(path, Serialize, Header, Footer, queueCapacity);
         }
 
-        /// <summary>Text written once when the file is created.</summary>
+        /// <summary>Text written at the start of the file.</summary>
         protected virtual string Header => null;
 
-        /// <summary>Text written once when the sink is disposed.</summary>
+        /// <summary>Text written at the end of the file when the sink is disposed.</summary>
         protected virtual string Footer => null;
 
         /// <summary>

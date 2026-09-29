@@ -2,6 +2,7 @@ using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Settings;
 using System;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
@@ -67,8 +68,11 @@ namespace EldritchGames.EldritchLogger.Formatting
         {
             if (entry.Metadata == null) return;
 
+            // Filled template holes are already in the message; repeating them (and the template) is noise.
             foreach (var kv in entry.Metadata)
             {
+                if (kv.InMessage || kv.Key == LogPropertyKeys.MessageTemplate) continue;
+
                 sb.Append(' ');
                 switch (kv.Key)
                 {

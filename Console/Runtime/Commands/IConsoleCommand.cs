@@ -37,11 +37,18 @@ namespace EldritchGames.EldritchLogger.Console.Commands
         /// <summary>The original input line.</summary>
         public string RawInput { get; }
 
-        public CommandContext(CommandArguments arguments, IConsoleOutput output, string rawInput)
+        /// <summary>
+        /// Whether the console currently allows cheats. Commands marked as cheats are already blocked by the
+        /// executor; this is for commands that gate only part of their behaviour (e.g. writing a cheat variable).
+        /// </summary>
+        public bool CheatsAllowed { get; }
+
+        public CommandContext(CommandArguments arguments, IConsoleOutput output, string rawInput, bool cheatsAllowed = true)
         {
             Arguments = arguments ?? CommandArguments.Empty;
             Output = output ?? throw new ArgumentNullException(nameof(output));
             RawInput = rawInput ?? string.Empty;
+            CheatsAllowed = cheatsAllowed;
         }
     }
 

@@ -1,22 +1,45 @@
 # Eldritch Logger
 
-Structured logging framework for Unity, with an in-game command console. Configurable log levels, categories, structured metadata and pluggable sinks (Unity Console, JSON Lines, XML, text files, the in-game console, or your own), managed through a ScriptableObject.
+Structured logging for Unity, with an in-game command console. Game code logs
+through one small interface; a `LogSettings` asset decides which levels and
+categories are written and where they go: the Unity Console, JSON Lines, XML
+or text files, a log server over HTTP, the in-game console, or your own sink.
+
+Logging never throws and never blocks the game. Disabled levels cost nothing,
+file and network writes happen on background threads, and a failing sink is
+reported and skipped. Entries are structured: template holes, scopes and
+enrichers become properties that files, Seq and the Log Viewer can filter by.
+
+See `Documentation~/index.md` for the full guide, `Documentation~/getting-started.md`
+to set it up, `Documentation~/logging.md` for the logging API,
+`Documentation~/runtime-console.md` for the in-game console,
+`Documentation~/editor-tooling.md` for the editor windows and analyzers,
+`Documentation~/architecture.md` for how the pieces fit together, and
+`Documentation~/extending.md` to add sinks, enrichers and commands from your own
+code.
 
 ## Features
 
-- **Log levels:** `Debug` `Info` `Warning` `Error` `Critical`
-- **Categories:** built-in `General` `Gameplay` `UI` `Audio` `Network` `AI` `Physics` `Animation` `Input`, plus any custom category you add in the inspector — all toggled and colored the same way
-- Fluent builder API; disabled levels cost nothing (no allocations)
-- Per-class named loggers — every entry carries `Logger = "ClassName"`
-- SLF4J-style factory (`ELoggerFactory`) with a swappable `ILoggerFactory` back-end
-- Enrichers — scene and build version are added automatically; add your own (player id, session id...)
-- Sinks with their own minimum level; add custom sinks from the inspector or code
-- File sinks write on a background thread, in order, through a bounded queue (logging never blocks the game)
-- One file per session with automatic retention of the last N sessions
-- Thread-safe: log from worker threads
-- Unity context objects — click a log line to select the GameObject
-- **Runtime Console** — in-game command console that shows logger output, with typed commands, autocompletion, history and themes; stripped from release builds by default, with cheat-command gating
-- **Editor tooling** — Log Viewer window, Console Commands window, Project Settings page, category code generation, and code analyzers
+- **Levels** `Debug` `Info` `Warning` `Error` `Critical`, and **categories**:
+  built-in ones plus any you add in the inspector
+- **Message templates**: `logger.Info("Player {Name} joined", name)` records
+  `Name` as a property
+- **Scopes**: `using (logger.BeginScope("MatchId", id))` tags every entry in
+  the block, across `await`
+- Fluent builder with structured properties, exceptions and clickable context
+  objects
+- Per-class named loggers through `ELoggerFactory`, with a swappable back-end
+- Sinks with their own minimum level: Unity Console, JSON Lines, XML, text,
+  HTTP (JSON, JSON Lines or CLEF for Seq), or your own
+- One file per session with automatic retention; bounded background queues
+- Captures Unity's own errors and uncaught exceptions into your sinks
+- Runtime overrides for level and categories that never touch the asset
+- **Runtime console**: typed commands, autocomplete, history and themes;
+  commands from plain methods (`[ConsoleMethod]`) and console variables
+  (`[ConsoleVariable]`); `log.*` commands; cheat gating; stripped from release
+  builds by default
+- **Editor tooling**: Log Viewer, Console Commands window, Project Settings,
+  category code generation, and Roslyn analyzers ELG001–ELG005
 
 ## Installation
 
@@ -30,107 +53,93 @@ Add to `Packages/manifest.json`:
 }
 ```
 
-Dependencies (installed automatically): Input System, uGUI (TextMeshPro), Newtonsoft JSON.
+Input System, uGUI (TextMeshPro) and Newtonsoft JSON are installed with it.
 
-## Setup
+## Quick start
 
-1. Open **Edit → Project Settings → Eldritch Logger** and click **Create Assets/Resources/LogSettings.asset** (or create it from **Assets → Create → Eldritch Logger → Log Settings** inside a `Resources` folder).
-2. Configure it on the same page or in the inspector:
-   - **Minimum Log Level** — entries below it are discarded.
-   - **Categories** — toggle, color, and add/remove custom categories.
-   - **Sinks** — where entries go. The Unity Console sink is there by default; use **Add Sink ▾** for JSON Lines, XML or text files (or your own sink types). Each sink has its own minimum level.
-   - **Advanced** — timestamp format, message prefix, category colors, stack-trace filtering, auto-initialization.
-
-`LoggerBootstrap` builds the logger from this asset before the first scene loads. No code required.
-
-## Usage
+1. Open **Edit → Project Settings → Eldritch Logger** and click **Create
+   Assets/Resources/LogSettings.asset**.
+2. Set the minimum level and categories, and add sinks with **Add Sink ▾**.
+   The logger builds itself from this asset before the first scene loads.
+3. Get a logger in `Awake` and log:
 
 ```csharp
 using EldritchGames.EldritchLogger.Core;
-```
 
-### Obtaining a Logger
-
-**MonoBehaviour — initialize in `Awake`:**
-```csharp
 public class PlayerController : MonoBehaviour
 {
     private IEldritchLogger _logger;
 
     void Awake() => _logger = ELoggerFactory.GetLogger<PlayerController>();
+
+    void Start() => _logger.Info("Player {Name} spawned at {Position}", name, transform.position);
 }
 ```
 
-> Do **not** use a field initializer: Unity can construct MonoBehaviours during edit-mode deserialization, before the factory is registered, and the logger would be a no-op.
+4. Optional: drag the `Eldritch Console` prefab into the scene, assign a
+   Console Settings asset and a toggle action, and type `help` in Play Mode.
 
-**Pure C# class — constructor injection:**
+## Examples
+
+### Templates, the builder and exceptions
+
 ```csharp
-public class GameService
+_logger.Info("Player {Name} took {Damage:0.0} damage", player.Name, damage);
+_logger.Error(ex, "Saving slot {Slot} failed", slot);
+
+_logger.AtWarning(LogCategory.Network)
+    .AddKeyValue("Peer", peer)
+    .WithComponent(this)          // click the entry in the Unity Console to select this object
+    .Log("Lost {Packets} packets", lost);
+```
+
+### Custom categories
+
+```csharp
+_logger.Log(LogLevel.Info, "Economy", "Player purchased sword");      // added in the LogSettings inspector
+_logger.AtInfo(LogCategories.LootDrops).Log("Chest opened");          // generated class: typos don't compile
+```
+
+### Scopes
+
+```csharp
+using (_logger.BeginScope(("MatchId", match.Id), ("Map", match.Map)))
 {
-    private readonly IEldritchLogger _logger;
-    public GameService(IEldritchLogger logger) => _logger = logger;
+    _logger.Info("Round {Round} started", round);   // carries MatchId and Map
+    await SpawnWaveAsync();                          // and so does everything logged in here
 }
 ```
 
-### Direct Logging
+### Guarding expensive debug logging
 
 ```csharp
-_logger.Log(LogLevel.Info,    LogCategory.UI,      "Button clicked");
-_logger.Log(LogLevel.Warning, LogCategory.Network, "Packet dropped");
+if (_logger.IsEnabled(LogLevel.Debug, LogCategory.AI))
+    _logger.AtDebug(LogCategory.AI).Log("Path {Path}", string.Join(" → ", path));
 ```
 
-### Custom Categories
-
-Add a category in the `LogSettings` inspector, then log against it by name or with your own enum:
+### Runtime control
 
 ```csharp
-_logger.Log(LogLevel.Info, "Economy", "Player purchased sword");
-
-public enum GameCategory { Economy, Quests }
-_logger.Log(LogLevel.Warning, GameCategory.Quests, "Quest state corrupted");
+ELoggerFactory.Control.MinimumLevelOverride = LogLevel.Debug;   // this session only
+ELoggerFactory.Control.SetCategoryOverride(LogCategory.AI, false);
 ```
 
-Names are case-insensitive. Entries in categories that are not registered (or are disabled) are discarded.
+Or from the in-game console: `log.level debug`, `log.category AI off`, `log.reset`.
 
-### Fluent Builder
+### A console command from a method
 
 ```csharp
-_logger.AtInfo(LogCategory.Gameplay)
-    .AddKeyValue("ItemId", 42)
-    .WithComponent(this)
-    .Log("Player picked up item");
+public static class DebugCommands
+{
+    [ConsoleMethod("give", "Adds an item to the player.")]
+    static string Give(string item, int amount = 1) => Inventory.Add(item, amount);
 
-_logger.AtError(LogCategory.AI)
-    .WithException(ex)
-    .Log("AI navigation failed");
+    [ConsoleVariable("timescale", "Game speed.", Min = 0, Max = 10)]
+    static float TimeScale { get => Time.timeScale; set => Time.timeScale = value; }
+}
 ```
 
-| Method                   | Purpose                                                          |
-|--------------------------|------------------------------------------------------------------|
-| `.AddKeyValue(key, val)` | Structured metadata                                              |
-| `.WithException(ex)`     | Exception (type, message, filtered stack trace)                  |
-| `.WithEvent(evt, name)`  | C# delegate or UnityEvent that triggered the entry               |
-| `.WithComponent(comp)`   | Component and GameObject names; the component becomes the context |
-| `.WithContext(obj)`      | Unity object selected when clicking the entry in the Unity Console |
-| `.Category(category)`    | Override the category                                            |
-| `.Log("message")`        | Dispatch                                                         |
-
-A builder is single-use. When the level/category is disabled, `AtInfo()` etc. return a shared no-op builder, so disabled logging allocates nothing. Use `_logger.IsEnabled(level, category)` to skip expensive message construction.
-
-### Sinks
-
-| Sink (inspector)  | Output                                                        |
-|-------------------|---------------------------------------------------------------|
-| Unity Console     | `Debug.Log` with rich-text category colors and context objects |
-| JSON Lines File   | `.jsonl` — one JSON object per line, valid even after a crash |
-| XML File          | `.xml` — `<Logs>` document, closed on shutdown                |
-| Text File         | `.txt` — plain text, no color tags                            |
-
-File sinks write to `Application.persistentDataPath` unless a directory is set. With **New File Per Session** each run gets `name_yyyyMMdd_HHmmss.ext` and only the newest **Max Session Files** are kept. If a file sink's queue fills up, the oldest pending entries are dropped and the drop is reported.
-
-### Extending the Logger
-
-**Custom sink:** implement `ILogSink`. `Emit` runs on the logging thread and must return quickly.
+### A custom sink
 
 ```csharp
 public sealed class AnalyticsSink : ILogSink
@@ -139,223 +148,14 @@ public sealed class AnalyticsSink : ILogSink
     public LogLevel MinimumLevel => LogLevel.Error;
     public void Emit(LogEntryDto entry) => Analytics.Queue(entry.Category, entry.Message);
 }
-```
 
-To make it configurable in the inspector, add a config class — it appears in **Add Sink ▾** automatically:
-
-```csharp
 [Serializable]
-public sealed class AnalyticsSinkConfig : LogSinkConfig
+public sealed class AnalyticsSinkConfig : LogSinkConfig   // appears in Add Sink ▾
 {
     public override string DisplayName => "Analytics";
     public override ILogSink CreateSink(SinkBuildContext context) => new AnalyticsSink();
 }
 ```
-
-Or attach a sink at runtime: `ELoggerFactory.Sinks?.AddSink(sink)`.
-
-**Custom enricher:** implement `ILogEnricher` to add properties to every entry (must be thread-safe).
-
-**Composing the logger in code:** turn off **Auto Initialize** in `LogSettings` and build it yourself:
-
-```csharp
-var logger = EldritchLoggerBuilder.FromSettings(settings)
-    .AddEnricher(new PlayerIdEnricher())
-    .AddSink(new AnalyticsSink())
-    .Build();
-LoggerBootstrap.Install(logger);
-```
-
-### DI Container Integration
-
-```csharp
-// Zenject example
-Container.Bind<ILoggerFactory>().FromInstance(new EldritchLoggerFactory(rootLogger)).AsSingle();
-ELoggerFactory.SetFactory(Container.Resolve<ILoggerFactory>());
-```
-
-`ELoggerFactory.ClearFactory()` resets to the no-op `NullLogger`.
-
-## Runtime Console
-
-The in-game console lives in the `EldritchLogger.Console` assembly (`EldritchGames.EldritchLogger.Console.*`).
-
-### Setup
-
-1. **Assets → Create → Eldritch Logger → Console Settings** — create a `CommandConsoleSettings` asset.
-2. Drag the `Eldritch Console` prefab (`Packages/Eldritch Logger/Console/Prefabs`) into your scene.
-3. On `ConsoleBootstrap`, assign the settings asset and an `InputActionReference` to toggle the console. Optionally assign an accept-suggestion action (defaults to Tab) and a `LogSettings` asset for formatting.
-
-### Logger Integration
-
-| Setting (`CommandConsoleSettings`) | Effect |
-|---|---|
-| `showEldritchLogs` / `minimumLoggerLevel` | Show EldritchLogger entries in the console |
-| `showUnityLogs` | Also show plain `Debug.Log` messages |
-| `mirrorCommandOutputToLogger` | Send command output to the logger too (e.g. to keep it in log files) |
-| `maxBufferedLines` / `poolSize` | Lines kept in memory / line objects on screen |
-
-Each logger entry appears once even when both logger and Unity logs are shown. The view redraws at most once per frame, so log bursts don't stall the game.
-
-### Built-in Commands
-
-| Command | Description |
-|---|---|
-| `help [command]` (`?`) | Lists all commands, or details for one |
-| `clear` (`cls`) | Clears the console |
-| `history [--limit=N]` | Shows previously entered commands |
-| `repeat <count> [--silent] [--delay=ms] <command...>` | Repeats a command (runs as a coroutine) |
-| `theme [name]` | Lists themes, or applies one from `Resources/Themes` |
-
-Flags accept `--name=value` or `--name value`. Tab completes command names, flags and argument values.
-
-### Custom Commands
-
-Describe the command's arguments once; binding, validation, `help` and autocomplete all use the description. Write output to `context.Output`, not `Debug.Log`.
-
-```csharp
-using EldritchGames.EldritchLogger.Console.Arguments;
-using EldritchGames.EldritchLogger.Console.Commands;
-using EldritchGames.EldritchLogger.Console.Output;
-
-[ConsoleCommand] // discovered automatically; constructor parameters are injected
-public sealed class GiveCommand : IConsoleCommand
-{
-    private readonly Inventory inventory;
-
-    public GiveCommand(Inventory inventory) => this.inventory = inventory;
-
-    public CommandDescriptor Descriptor { get; } = new(
-        "give", "Adds an item to the inventory.",
-        parameters: new[]
-        {
-            ParameterSpec.Required("item", ArgumentTypes.Choice("item", () => ItemDatabase.Names)),
-            ParameterSpec.Optional("amount", ArgumentTypes.PositiveInt)
-        },
-        flags: new[] { FlagSpec.Switch("silent") });
-
-    public void Execute(CommandContext context)
-    {
-        var item = context.Arguments.Get<string>("item");
-        int amount = context.Arguments.GetOrDefault("amount", 1);
-        inventory.Add(item, amount);
-        if (!context.Arguments.HasFlag("silent"))
-            context.Output.Info($"Gave {amount} x {item}.");
-    }
-}
-```
-
-- Multi-frame commands implement `IAsyncConsoleCommand` and return an `IEnumerator`.
-- Several related commands can be registered together by an `ICommandGroup`.
-- Constructor dependencies come from the console's service provider (registry, executor, output, view, history, settings, theme services). A command or group whose dependencies are missing is skipped with a warning. Register your own services before the console starts:
-
-```csharp
-[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-static void RegisterConsoleServices() =>
-    ConsoleBootstrap.ConfiguringServices += services => services.Register(Inventory.Instance);
-```
-
-- New argument types: implement `IArgumentType` (`TryParse`, `Suggest`).
-
-### Themes
-
-**Assets → Create → Eldritch Logger → Console Theme**, placed in `Resources/Themes` (folder configurable). To theme extra UI elements, add a `ThemeableGraphic` component or implement `IThemeable`.
-
-### Release Safety
-
-Each `CommandConsoleSettings` asset has an **Availability**:
-
-| Availability | Runs in |
-|---|---|
-| `DevelopmentBuilds` (default) | Editor and Development Builds |
-| `EditorOnly` | Editor only |
-| `Always` | Everywhere, including release builds (a build warning is logged) |
-| `Never` | Nowhere |
-
-Outside its availability the console destroys itself at startup (its `consoleRoot`, the prefab root by default). When building, it is **stripped from the scenes**, so release players don't contain it at all. To disable the console everywhere, tick **Disable console** in **Project Settings → Eldritch Logger → Console**. This adds the `ELDRITCH_CONSOLE_DISABLED` scripting define.
-
-**Cheats:** mark commands with `[Cheat]` or `new CommandDescriptor(..., isCheat: true)`. They only run when the console's `ICheatPolicy` allows it. The default policy follows **Allow Cheats** on the settings asset. `help` shows `[cheat]` next to them. For per-player rules (e.g. only the multiplayer host), register your own policy:
-
-```csharp
-ConsoleBootstrap.ConfiguringServices += services => services.Register<ICheatPolicy>(new HostOnlyCheatPolicy());
-```
-
-## Editor Tooling
-
-All tools are under **Tools → Eldritch Logger**.
-
-### Log Viewer
-
-**Tools → Eldritch Logger → Log Viewer** browses logger entries:
-- **Live:** entries from the current Play Mode session. They are captured from the moment the logger starts, even if the window is closed. Turn capture off with the **Capture** toggle.
-- **File:** open a `.jsonl` file from the JSON Lines sink. **Open Log Folder** jumps to the default log directory. Lines cut off by a crash are skipped and counted.
-
-Filter by level (with counts), category, logger name and free text, which also searches metadata and exceptions. Select an entry to see its metadata and exception. Double-click an entry to select its context object in the scene.
-
-### Console Commands Window
-
-**Tools → Eldritch Logger → Console Commands**:
-- **Play Mode:**
-  - The live registry: usage, aliases, cheat flag, and the group or type that registered each command.
-  - Commands that were skipped, with the reason.
-  - Name/alias conflicts.
-  - A box to run commands.
-- **Edit Mode:** every discovered command group and `[ConsoleCommand]` type, flagging constructor dependencies that the console does not provide by default. Those types would be skipped unless the dependency is registered through `ConfiguringServices`.
-
-### Project Settings
-
-**Edit → Project Settings → Eldritch Logger** shows which `LogSettings` asset the bootstrap will load (and offers to create one), the full settings inspector, and code generation options. The **Console** sub-page covers release safety and every console settings asset.
-
-### Category Code Generation
-
-Generate a static class with one `LogCategory` field per configured category, so a typo becomes a compile error:
-
-```csharp
-_logger.AtInfo(LogCategories.LootDrops).Log("Chest opened");
-```
-
-Set the output file, namespace and class name in Project Settings, then click **Generate Now** (or **Generate Class** in the `LogSettings` inspector). Enable **Regenerate automatically** to update the class whenever categories are added or removed. The options are stored in `ProjectSettings/EldritchLoggerSettings.asset`; commit it.
-
-### Sink Inspector Helpers
-
-File sinks have an **Open Folder** button. In Play Mode, the `LogSettings` inspector lists the running sinks with their dropped-entry counts, and a **Reveal** button for log files.
-
-### Code Analyzers
-
-The package ships Roslyn analyzers that run on every assembly referencing the logger:
-
-| ID | Warns about |
-|---|---|
-| `ELG001` | `Debug.Log*` in game code. Use an `IEldritchLogger` so entries are filtered and reach every sink. Editor assemblies (`*.Editor`, `Assembly-CSharp-Editor`) are exempt. |
-| `ELG002` | A Debug-level message built with interpolation, concatenation or `string.Format` outside an `if (logger.IsEnabled(...))` check. The string is built even when Debug is off. |
-| `ELG003` | A MonoBehaviour field initialized with `ELoggerFactory.GetLogger`. Initialize it in `Awake()` instead. |
-
-Suppress a rule locally with `#pragma warning disable ELG001`. To change severities, add `Assets/Default.ruleset` (all assemblies) or `Assets/<AssemblyName>.ruleset` (one assembly).
-
-The analyzer source is in `Analyzers~/`. After changing it, rebuild with `dotnet build Analyzers~/EldritchLogger.Analyzers -c Release`, which copies the DLL to `Runtime/Analyzers/`. Run the rule tests with `dotnet run --project Analyzers~/EldritchLogger.Analyzers.Tests`.
-
-## Troubleshooting
-
-**Nothing prints**
-- Check that `LogSettings.asset` is at `Assets/Resources/LogSettings.asset` (an error is logged otherwise) and that **Auto Initialize** is on.
-- Check the minimum level, the category toggles, and each sink's minimum level.
-- Initialize MonoBehaviour loggers in `Awake()`, not in a field initializer.
-
-**Custom category logs don't appear**
-- The category must be registered and enabled in `LogSettings`.
-
-**No log files**
-- Add a file sink under **Sinks**. Files go to `Application.persistentDataPath` by default.
-- Internal problems (a sink that throws, a full file queue) are reported in the Unity Console with an `[EldritchLogger]` prefix.
-
-**Console command not found**
-- Open **Tools → Eldritch Logger → Console Commands**: it lists skipped types with the missing dependency, and name conflicts.
-
-**The console does not appear**
-- Check the settings asset's **Availability** and the **Disable console** toggle in Project Settings → Eldritch Logger → Console. Release builds strip the console unless availability is `Always`.
-
-**"'x' is a cheat and cheats are disabled"**
-- Enable **Allow Cheats** on the console settings, or check your custom `ICheatPolicy`.
 
 ## Samples
 

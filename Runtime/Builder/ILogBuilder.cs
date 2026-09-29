@@ -25,5 +25,11 @@ namespace EldritchGames.EldritchLogger.Builder
         ILogBuilder WithContext(UnityEngine.Object context);
 
         void Log(string message);
+
+        /// <summary>
+        /// Logs a message template: <c>.Log("Player {Name} took {Damage} damage", name, damage)</c>.
+        /// Each hole becomes a property. Nothing is rendered when the entry is disabled.
+        /// </summary>
+        void Log(string template, params object[] args);
     }
 }

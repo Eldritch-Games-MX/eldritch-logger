@@ -37,11 +37,20 @@ namespace EldritchGames.EldritchLogger.Core
         public static EldritchGames.EldritchLogger.Builder.ILogBuilder At(this IEldritchLogger l, LogLevel level, LogCategory c = default) => null;
         public static EldritchGames.EldritchLogger.Builder.ILogBuilder AtDebug(this IEldritchLogger l, LogCategory c = default) => null;
         public static EldritchGames.EldritchLogger.Builder.ILogBuilder AtInfo(this IEldritchLogger l, LogCategory c = default) => null;
+        public static void Info(this IEldritchLogger l, string template, params object[] args) { }
+        public static void Debug(this IEldritchLogger l, string template, params object[] args) { }
+        public static void Error(this IEldritchLogger l, System.Exception exception, string template, params object[] args) { }
+        public static void LogTemplate(this IEldritchLogger l, LogLevel level, LogCategory category, System.Exception exception, string template, params object[] args) { }
+        public static System.IDisposable BeginScope(this IEldritchLogger l, string key, object value) => null;
     }
+}
+namespace EldritchGames.EldritchLogger.Pipeline
+{
+    public static class LogScope { public static System.IDisposable Push(string key, object value) => null; }
 }
 namespace EldritchGames.EldritchLogger.Builder
 {
-    public interface ILogBuilder { ILogBuilder AddKeyValue(string k, object v); void Log(string message); }
+    public interface ILogBuilder { ILogBuilder AddKeyValue(string k, object v); void Log(string message); void Log(string template, params object[] args); }
 }
 ";
 
@@ -51,6 +60,26 @@ namespace EldritchGames.EldritchLogger.Builder
     {
         Case("ELG001: Debug.Log in game code", Game("UnityEngine.Debug.Log(\"hi\");"), "ELG001");
         Case("ELG001: Debug.LogWarning", Game("UnityEngine.Debug.LogWarning(\"hi\");"), "ELG001");
+        Case("ELG004: interpolated template", Game("logger.Info($\"Player {hp} joined\");"), "ELG004");
+        Case("ELG004: concatenated template with exception", Game("logger.Error(null, \"Save \" + hp + \" failed\");"), "ELG004");
+        Case("ELG004: builder template overload", Game("logger.AtInfo().Log($\"hp {hp} of {{Max}}\", 100);"), "ELG004");
+        Case("ELG004: named template argument", Game("logger.Info(args: new object[] { hp }, template: $\"hp {hp}\");"), "ELG004");
+        Case("ELG004: proper template is fine", Game("logger.Info(\"Player {Name} joined\", hp);"));
+        Case("ELG004: Debug shorthand is a template, not ELG002", Game("logger.Debug($\"hp {hp}\");"), "ELG004");
+        Case("ELG005: using statement across yield",
+             Coroutine("using (logger.BeginScope(\"MatchId\", 1)) { yield return null; }"), "ELG005");
+        Case("ELG005: using var across yield",
+             Coroutine("using var scope = logger.BeginScope(\"MatchId\", 1); yield return null;"), "ELG005");
+        Case("ELG005: LogScope.Push",
+             Coroutine("using (EldritchGames.EldritchLogger.Pipeline.LogScope.Push(\"A\", 1)) { yield return 1; }"), "ELG005");
+        Case("ELG005: scope closed before yield",
+             Coroutine("using (logger.BeginScope(\"MatchId\", 1)) { logger.Info(\"x\"); } yield return null;"));
+        Case("ELG005: yield before using var",
+             Coroutine("yield return null; using var scope = logger.BeginScope(\"MatchId\", 1);"));
+        Case("ELG005: other disposables are fine",
+             Coroutine("using (new System.IO.MemoryStream()) { yield return null; }"));
+        Case("ELG005: a local iterator declared inside a scope is its own body",
+             Coroutine("using (logger.BeginScope(\"A\", 1)) { System.Collections.IEnumerable Inner() { yield return 1; } } yield break;"));
         CaseIn("Assembly-CSharp-Editor", "ELG001: not reported in editor assemblies", Game("UnityEngine.Debug.Log(\"hi\");"));
         CaseIn("MyGame.Editor.Tools", "ELG001: not reported in *.Editor.* assemblies", Game("UnityEngine.Debug.Log(\"hi\");"));
         CaseIn("MyEditorGame", "ELG001: \"Editor\" inside a word still counts as game code", Game("UnityEngine.Debug.Log(\"hi\");"), "ELG001");
@@ -68,6 +97,14 @@ namespace EldritchGames.EldritchLogger.Builder
         Case("ELG002: Info level is not reported", Game("logger.AtInfo().Log($\"hp {hp}\");"));
         Case("ELG002: else branch is not guarded",
              Game("if (logger.IsEnabled(LogLevel.Debug, LogCategory.General)) { } else logger.AtDebug().Log($\"hp {hp}\");"), "ELG002");
+        Case("ELG002: Debug template with a value-type argument", Game("logger.Debug(\"Hp {Hp}\", hp);"), "ELG002");
+        Case("ELG002: AtDebug template with an argument", Game("logger.AtDebug().Log(\"Name {Name}\", \"bob\");"), "ELG002");
+        Case("ELG002: LogTemplate at Debug", Game("logger.LogTemplate(LogLevel.Debug, LogCategory.General, null, \"Hp {Hp}\", hp);"), "ELG002");
+        Case("ELG002: guarded Debug template",
+             Game("if (logger.IsEnabled(LogLevel.Debug, LogCategory.General)) logger.Debug(\"Hp {Hp}\", hp);"));
+        Case("ELG002: Debug template without arguments", Game("logger.Debug(\"Round started\");"));
+        Case("ELG002: Debug template with an existing array", Game("var values = new object[] { hp }; logger.Debug(\"Hp {Hp}\", values);"));
+        Case("ELG002: Info template is not reported", Game("logger.Info(\"Hp {Hp}\", hp);"));
 
         Case("ELG003: MonoBehaviour field initializer", @"
 using EldritchGames.EldritchLogger.Core;
@@ -95,6 +132,17 @@ namespace Game
         IEldritchLogger logger;
         int hp;
         void Update() {{ {body} }}
+    }}
+}}";
+
+    private static string Coroutine(string body) => $@"
+using EldritchGames.EldritchLogger.Core;
+namespace Game
+{{
+    class Player
+    {{
+        IEldritchLogger logger;
+        System.Collections.IEnumerator Round() {{ {body} }}
     }}
 }}";
 

@@ -9,8 +9,11 @@ namespace EldritchLogger.Analyzers
 {
     /// <summary>
     /// ELG001: UnityEngine.Debug.Log* used instead of the logger.
-    /// ELG002: Debug-level message built with interpolation/concatenation/string.Format without an IsEnabled check.
+    /// ELG002: Debug-level message built with interpolation/concatenation/string.Format, or a Debug template call with
+    ///         arguments, without an IsEnabled check.
     /// ELG003: A MonoBehaviour field initialized with ELoggerFactory.GetLogger (runs before the logger exists).
+    /// ELG004: A message template built with interpolation/concatenation (loses the structured properties).
+    /// ELG005: A log scope kept open across a coroutine yield (it leaks to unrelated main-thread logs).
     /// </summary>
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class EldritchLoggerAnalyzer : DiagnosticAnalyzer
@@ -35,7 +38,16 @@ namespace EldritchLogger.Analyzers
             "Debug message is built even when Debug logging is disabled",
             "This Debug-level message is built with {0} even when Debug logging is disabled; wrap it in 'if (logger.IsEnabled(LogLevel.Debug, category))'",
             Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
-            description: "Interpolated strings, concatenation and string.Format allocate before the logger can discard the entry.");
+            description: "Interpolated strings, concatenation and string.Format allocate before the logger can discard the entry. " +
+                         "Message templates (logger.Debug(\"... {Value}\", value)) avoid formatting and capture properties, but their " +
+                         "argument array and boxed values are still allocated at the call site, so hot paths still need the IsEnabled check.");
+
+        public static readonly DiagnosticDescriptor InterpolatedTemplate = new(
+            "ELG004",
+            "Message template built with interpolation or concatenation",
+            "This message template is built with {0}: put the values in holes and pass them as arguments (\"Player {{Name}} joined\", name) so they are captured as properties",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            description: "Interpolating into a template loses the structured properties, and braces inside the values are read as template holes.");
 
         public static readonly DiagnosticDescriptor LoggerInFieldInitializer = new(
             "ELG003",
@@ -43,8 +55,17 @@ namespace EldritchLogger.Analyzers
             "Initialize '{0}' in Awake(): MonoBehaviour field initializers can run before the logger is installed and capture a no-op logger",
             Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
+        public static readonly DiagnosticDescriptor ScopeAcrossYield = new(
+            "ELG005",
+            "Log scope kept open across a yield",
+            "This 'yield' keeps a log scope open: coroutines resume outside the execution context, so the scope applies to unrelated logs until the coroutine resumes; close the scope before yielding",
+            Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+            description: "Unity resumes coroutines from native code without restoring the execution context. A scope opened before a yield stays active on the main thread while the coroutine is suspended.");
+
+        private const string LogScopeType = LoggerNamespace + ".Pipeline.LogScope";
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(UseLogger, GuardExpensiveDebugMessage, LoggerInFieldInitializer);
+            ImmutableArray.Create(UseLogger, GuardExpensiveDebugMessage, LoggerInFieldInitializer, InterpolatedTemplate, ScopeAcrossYield);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -55,7 +76,59 @@ namespace EldritchLogger.Analyzers
                 // Only analyze code that can see the logger.
                 if (start.Compilation.GetTypeByMetadataName(LoggerInterface) == null) return;
                 start.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+                start.RegisterSyntaxNodeAction(AnalyzeYield, SyntaxKind.YieldReturnStatement);
             });
+        }
+
+        private static void AnalyzeYield(SyntaxNodeAnalysisContext context)
+        {
+            var yield = (YieldStatementSyntax)context.Node;
+
+            foreach (var ancestor in yield.Ancestors())
+            {
+                if (ancestor is MemberDeclarationSyntax || ancestor is AnonymousFunctionExpressionSyntax || ancestor is LocalFunctionStatementSyntax)
+                    break; // the iterator's own body ends here
+
+                // using (logger.BeginScope(...)) { ... yield ... }
+                if (ancestor is UsingStatementSyntax usingStatement && usingStatement.Statement.Span.Contains(yield.Span) &&
+                    OpensScope(context, (SyntaxNode)usingStatement.Expression ?? usingStatement.Declaration))
+                {
+                    Report(context, yield);
+                    return;
+                }
+
+                // using var scope = logger.BeginScope(...); ... yield ...
+                if (ancestor is BlockSyntax block)
+                {
+                    foreach (var statement in block.Statements)
+                    {
+                        if (statement.SpanStart >= yield.SpanStart) break;
+                        if (statement is LocalDeclarationStatementSyntax local && local.UsingKeyword != default &&
+                            OpensScope(context, local.Declaration))
+                        {
+                            Report(context, yield);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void Report(SyntaxNodeAnalysisContext context, YieldStatementSyntax yield) =>
+            context.ReportDiagnostic(Diagnostic.Create(ScopeAcrossYield, yield.GetLocation()));
+
+        /// <summary>True when <paramref name="node"/> calls <c>BeginScope</c> or <c>LogScope.Push</c>.</summary>
+        private static bool OpensScope(SyntaxNodeAnalysisContext context, SyntaxNode node)
+        {
+            if (node == null) return false;
+            foreach (var call in node.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>())
+            {
+                if (context.SemanticModel.GetSymbolInfo(call, context.CancellationToken).Symbol is not IMethodSymbol m) continue;
+                var type = m.ContainingType?.ToDisplayString();
+                if ((type == ExtensionsType && m.Name == "BeginScope") || (type == LogScopeType && m.Name == "Push"))
+                    return true;
+            }
+            return false;
         }
 
         private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -82,6 +155,16 @@ namespace EldritchLogger.Analyzers
                 return;
             }
 
+            if (TemplateArgument(invocation, method, containingType) is { } template)
+            {
+                var cost = DescribeCost(context, template);
+                if (cost != null)
+                    context.ReportDiagnostic(Diagnostic.Create(InterpolatedTemplate, template.GetLocation(), cost));
+                else
+                    CheckDebugTemplate(context, invocation, method, containingType, template);
+                return;
+            }
+
             if (method.Name == "Log")
                 CheckDebugMessage(context, invocation, method, containingType);
         }
@@ -92,6 +175,25 @@ namespace EldritchLogger.Analyzers
             if (string.IsNullOrEmpty(assemblyName)) return false;
             if (assemblyName.StartsWith("Assembly-CSharp-Editor")) return true;
             return assemblyName.Split('.').Any(part => part == "Editor");
+        }
+
+        private static readonly string[] TemplateMethods = { "Debug", "Info", "Warning", "Error", "Critical", "LogTemplate" };
+
+        /// <summary>The template argument of a message-template call, or null for other calls.</summary>
+        private static ExpressionSyntax TemplateArgument(InvocationExpressionSyntax invocation, IMethodSymbol method, string containingType)
+        {
+            bool isTemplateCall =
+                (containingType == ExtensionsType && TemplateMethods.Contains(method.Name)) ||
+                (containingType == BuilderType && method.Name == "Log" && method.Parameters.Length == 2);
+            if (!isTemplateCall) return null;
+
+            var args = invocation.ArgumentList.Arguments;
+            foreach (var arg in args)
+                if (arg.NameColon?.Name.Identifier.Text == "template") return arg.Expression;
+
+            // Extension calls resolve to the reduced method, whose parameters exclude "this".
+            int index = method.Parameters.IndexOf(method.Parameters.FirstOrDefault(p => p.Name == "template"));
+            return index >= 0 && index < args.Count ? args[index].Expression : null;
         }
 
         private static bool IsInLoggerPackage(SyntaxNodeAnalysisContext context)
@@ -142,6 +244,37 @@ namespace EldritchLogger.Analyzers
             if (cost == null || IsGuardedByIsEnabled(context, invocation)) return;
 
             context.ReportDiagnostic(Diagnostic.Create(GuardExpensiveDebugMessage, message.GetLocation(), cost));
+        }
+
+        /// <summary>
+        /// A Debug-level template call with arguments allocates its params array (and boxes value types)
+        /// before the logger can discard the entry.
+        /// </summary>
+        private static void CheckDebugTemplate(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation,
+                                               IMethodSymbol method, string containingType, ExpressionSyntax template)
+        {
+            var args = invocation.ArgumentList.Arguments;
+            bool isDebug =
+                (containingType == ExtensionsType && method.Name == "Debug") ||
+                (containingType == ExtensionsType && method.Name == "LogTemplate" && args.Count > 0 && IsDebugLevel(context, args[0].Expression)) ||
+                (containingType == BuilderType && ChainStartsAtDebug(context, invocation));
+            if (!isDebug) return;
+
+            int templateIndex = -1;
+            for (int i = 0; i < args.Count; i++)
+                if (args[i].Expression == template) templateIndex = i;
+            var values = args.Skip(templateIndex + 1).Select(a => a.Expression).ToList();
+            if (values.Count == 0) return;
+
+            // An existing object[] passed as the params array allocates nothing new.
+            if (values.Count == 1 && context.SemanticModel.GetTypeInfo(values[0], context.CancellationToken).Type is IArrayTypeSymbol)
+                return;
+
+            if (IsGuardedByIsEnabled(context, invocation)) return;
+
+            bool boxes = values.Any(v => context.SemanticModel.GetTypeInfo(v, context.CancellationToken).Type?.IsValueType == true);
+            var cost = boxes ? "a params array and boxed arguments" : "a params array";
+            context.ReportDiagnostic(Diagnostic.Create(GuardExpensiveDebugMessage, template.GetLocation(), cost));
         }
 
         private static bool ChainStartsAtDebug(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation)

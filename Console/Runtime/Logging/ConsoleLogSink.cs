@@ -17,8 +17,10 @@ namespace EldritchGames.EldritchLogger.Console.Logging
     /// Sinks can be invoked from any thread, so entries are formatted and queued here and only
     /// written to the view when <see cref="Flush"/> is called on the main thread. The queue is
     /// bounded: when it is full the oldest entry is dropped and the drop is reported on the next flush.
+    /// Unity's own messages reach the console through its "Show Unity Logs" option, so the sink is marked
+    /// <see cref="IShowsUnityLog"/> and does not receive them a second time from the logger.
     /// </remarks>
-    public sealed class ConsoleLogSink : ILogSink, ISinkDiagnostics
+    public sealed class ConsoleLogSink : ILogSink, IShowsUnityLog, ISinkDiagnostics
     {
         private readonly ILogFormatter formatter;
         private readonly ConcurrentQueue<string> pending = new();

@@ -9,7 +9,7 @@ namespace EldritchGames.EldritchLogger.Sinks
     /// <summary>
     /// Writes entries to the Unity Console through <see cref="Debug"/>.
     /// </summary>
-    public sealed class UnityConsoleSink : ILogSink
+    public sealed class UnityConsoleSink : ILogSink, IShowsUnityLog
     {
         private readonly ILogFormatter formatter;
         private readonly bool useContextObjects;

@@ -3,6 +3,7 @@ using EldritchGames.EldritchLogger.Pipeline;
 using EldritchGames.EldritchLogger.Settings;
 using EldritchGames.EldritchLogger.Sinks.Config;
 using NUnit.Framework;
+using System;
 using System.Linq;
 using UnityEngine;
 
@@ -16,7 +17,7 @@ namespace EldritchGames.EldritchLogger.Tests
         public void SetUp() => settings = ScriptableObject.CreateInstance<LogSettings>();
 
         [TearDown]
-        public void TearDown() => Object.DestroyImmediate(settings);
+        public void TearDown() => UnityEngine.Object.DestroyImmediate(settings);
 
         [Test]
         public void Defaults_EnableEveryBuiltInCategory_AndTheUnityConsoleSink()
@@ -78,7 +79,7 @@ namespace EldritchGames.EldritchLogger.Tests
             settings.sinks.Add(new JsonLinesFileSinkConfig { fileName = "roundtrip", maxSessionFiles = 3 });
             settings.sinks.Add(new TextFileSinkConfig { enabled = false });
 
-            var copy = Object.Instantiate(settings);
+            var copy = UnityEngine.Object.Instantiate(settings);
             try
             {
                 Assert.That(copy.sinks.Select(s => s.GetType()),
@@ -90,7 +91,78 @@ namespace EldritchGames.EldritchLogger.Tests
             }
             finally
             {
-                Object.DestroyImmediate(copy);
+                UnityEngine.Object.DestroyImmediate(copy);
+            }
+        }
+
+        // 3 & 4 ------------------------------------------------------------------------------------------
+
+        [Test]
+        public void Presets_KeepTheUnityCategoryEnabled()
+        {
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            try
+            {
+                LogSettingsPresets.ApplyProduction(settings);
+                Assert.That(settings.IsCategoryEnabled(LogCategory.Unity), Is.True);
+
+                LogSettingsPresets.ApplyNormal(settings);
+                Assert.That(settings.IsCategoryEnabled(LogCategory.Unity), Is.True);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
+        public void Deserializing_AddsMissingBuiltInCategories_AndKeepsExistingOnes()
+        {
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            try
+            {
+                JsonUtility.FromJsonOverwrite(
+                    "{\"categories\":[{\"name\":\"General\",\"color\":{\"r\":1,\"g\":0,\"b\":0,\"a\":1},\"enabled\":false}," +
+                    "{\"name\":\"Loot\",\"color\":{\"r\":0,\"g\":0,\"b\":1,\"a\":1},\"enabled\":true}]}",
+                    settings);
+
+                Assert.That(settings.IsCategoryEnabled(LogCategory.Unity), Is.True, "missing built-in added, enabled");
+                Assert.That(settings.IsCategoryEnabled(LogCategory.General), Is.False, "existing entries are untouched");
+                Assert.That(settings.GetCategoryColor(LogCategory.General), Is.EqualTo(Color.red));
+                Assert.That(settings.IsCategoryEnabled("Loot"), Is.True);
+                Assert.That(settings.categories.Count, Is.EqualTo(LogCategory.BuiltIn.Count + 1));
+                Assert.That(settings.EnsureBuiltInCategories(), Is.False, "nothing left to add");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
+        public void CategorySetting_KnowsBuiltIns()
+        {
+            Assert.That(new CategorySetting("gameplay", Color.white).IsBuiltIn, Is.True);
+            Assert.That(new CategorySetting("Unity", Color.white).IsBuiltIn, Is.True);
+            Assert.That(new CategorySetting("Loot", Color.white).IsBuiltIn, Is.False);
+            Assert.That(new CategorySetting("Loot", Color.white).Category, Is.EqualTo(new LogCategory("loot")));
+        }
+
+        [Test]
+        public void SetAllCategoriesEnabled_TogglesEverything()
+        {
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            try
+            {
+                settings.AddCategory("Loot", Color.white);
+                settings.SetAllCategoriesEnabled(false);
+                Assert.That(settings.categories.Any(c => c.enabled), Is.False);
+                Assert.That(settings.AddCategory(" ", Color.white), Is.False);
+                Assert.That(settings.RemoveCategory(null), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings);
             }
         }
     }

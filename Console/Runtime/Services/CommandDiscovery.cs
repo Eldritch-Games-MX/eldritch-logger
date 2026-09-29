@@ -81,10 +81,14 @@ namespace EldritchGames.EldritchLogger.Console.Services
 
         /// <summary>Registers every discoverable group and attributed command. Failures are reported and skipped.</summary>
         public DiscoveryReport RegisterAll(ICommandRegistry registry) =>
-            RegisterAll(registry, GroupTypes, CommandTypes);
+            RegisterAll(registry, GroupTypes, CommandTypes, CommandMembers);
 
-        /// <summary>Registers the given types (used by <see cref="RegisterAll(ICommandRegistry)"/> and tests).</summary>
-        public DiscoveryReport RegisterAll(ICommandRegistry registry, IEnumerable<Type> groupTypes, IEnumerable<Type> commandTypes)
+        /// <summary>
+        /// Registers the given types and <see cref="Commands.Reflection.ConsoleMethodAttribute"/> /
+        /// <see cref="Commands.Reflection.ConsoleVariableAttribute"/> members (used by <see cref="RegisterAll(ICommandRegistry)"/> and tests).
+        /// </summary>
+        public DiscoveryReport RegisterAll(ICommandRegistry registry, IEnumerable<Type> groupTypes, IEnumerable<Type> commandTypes,
+                                           IEnumerable<MemberInfo> members = null)
         {
             if (registry == null) throw new ArgumentNullException(nameof(registry));
             var report = new DiscoveryReport();
@@ -111,8 +115,45 @@ namespace EldritchGames.EldritchLogger.Console.Services
                 tracking.Register((ICommand)instance);
             }
 
+            foreach (var member in members ?? Array.Empty<MemberInfo>())
+            {
+                ICommand command;
+                try
+                {
+                    command = member is MethodInfo method
+                        ? Commands.Reflection.ReflectionCommands.FromMethod(method)
+                        : Commands.Reflection.ReflectionCommands.FromMember(member);
+                }
+                catch (Exception ex)
+                {
+                    // Any failure (unsupported signature, a type from a missing assembly, a malformed attribute)
+                    // skips this member only; the rest of discovery continues.
+                    var reason = ex is NotSupportedException || ex is ArgumentException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
+                    Skip(report, SafeDeclaringType(member), $"Skipped {SafeDeclaringType(member)?.Name}.{SafeName(member)}: {reason}");
+                    continue;
+                }
+
+                tracking.Source = member.DeclaringType;
+                tracking.Register(command);
+            }
+
             tracking.Source = null;
             return report;
+        }
+
+        /// <summary>The <c>[ConsoleMethod]</c> methods and <c>[ConsoleVariable]</c> fields/properties declared on <paramref name="type"/>.</summary>
+        public static IEnumerable<MemberInfo> FindCommandMembers(Type type)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static |
+                                       BindingFlags.Instance | BindingFlags.DeclaredOnly;
+            foreach (var member in type.GetMembers(flags))
+            {
+                if (member is MethodInfo && member.IsDefined(typeof(Commands.Reflection.ConsoleMethodAttribute), false))
+                    yield return member;
+                else if ((member is FieldInfo || member is PropertyInfo) &&
+                         member.IsDefined(typeof(Commands.Reflection.ConsoleVariableAttribute), false))
+                    yield return member;
+            }
         }
 
         private bool TryCreate(Type type, string kind, DiscoveryReport report, out object instance)
@@ -209,6 +250,18 @@ namespace EldritchGames.EldritchLogger.Console.Services
             }
         }
 
+        /// <summary>Every discovered <c>[ConsoleMethod]</c> method and <c>[ConsoleVariable]</c> field or property.</summary>
+        public static IReadOnlyList<MemberInfo> CommandMembers
+        {
+            get
+            {
+                EnsureScanned();
+                return cachedCommandMembers;
+            }
+        }
+
+        private static MemberInfo[] cachedCommandMembers;
+
         private static void EnsureScanned()
         {
             if (cachedGroupTypes != null) return;
@@ -218,24 +271,68 @@ namespace EldritchGames.EldritchLogger.Console.Services
 
                 var consoleAssembly = typeof(ICommand).Assembly;
                 var consoleName = consoleAssembly.GetName().Name;
-                var types = AppDomain.CurrentDomain.GetAssemblies()
+                var allTypes = AppDomain.CurrentDomain.GetAssemblies()
                     .Where(a => a == consoleAssembly || References(a, consoleName))
                     .Where(a => !References(a, "nunit.framework")) // test assemblies define throwaway commands
                     .SelectMany(SafeGetTypes)
-                    .Where(t => t is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false })
+                    .Where(t => !t.ContainsGenericParameters)
                     .ToArray();
 
+                // Static classes are abstract+sealed, so members are scanned on every type.
+                // Every per-type reflection call is guarded: one type with an unresolvable signature
+                // (missing or stripped assembly) is skipped instead of breaking discovery for everything.
+                cachedCommandMembers = allTypes.SelectMany(SafeFindCommandMembers).ToArray();
+
+                var types = allTypes.Where(t => Safe(() => t.IsClass && !t.IsAbstract)).ToArray();
+
                 cachedCommandTypes = types
-                    .Where(t => typeof(ICommand).IsAssignableFrom(t) && t.IsDefined(typeof(ConsoleCommandAttribute), false))
+                    .Where(t => Safe(() => typeof(ICommand).IsAssignableFrom(t) && t.IsDefined(typeof(ConsoleCommandAttribute), false)))
                     .ToArray();
                 cachedGroupTypes = types
-                    .Where(t => typeof(ICommandGroup).IsAssignableFrom(t))
+                    .Where(t => Safe(() => typeof(ICommandGroup).IsAssignableFrom(t)))
                     .ToArray();
             }
         }
 
         private static bool References(Assembly assembly, string name) =>
             assembly.GetReferencedAssemblies().Any(r => r.Name == name);
+
+        /// <summary><see cref="FindCommandMembers"/>, or nothing when the type's members cannot be loaded.</summary>
+        internal static IReadOnlyList<MemberInfo> SafeFindCommandMembers(Type type)
+        {
+            try
+            {
+                return FindCommandMembers(type).ToArray();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<MemberInfo>();
+            }
+        }
+
+        private static Type SafeDeclaringType(MemberInfo member)
+        {
+            try { return member.DeclaringType; }
+            catch (Exception) { return null; }
+        }
+
+        private static string SafeName(MemberInfo member)
+        {
+            try { return member.Name; }
+            catch (Exception) { return "?"; }
+        }
+
+        private static bool Safe(Func<bool> predicate)
+        {
+            try
+            {
+                return predicate();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
         private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
         {

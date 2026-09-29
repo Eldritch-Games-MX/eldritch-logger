@@ -14,6 +14,13 @@ namespace EldritchGames.EldritchLogger.Dto
     {
         public string Key { get; set; }
         public string Value { get; set; }
+
+        /// <summary>
+        /// True when the value is already part of the message (a filled template hole), so text output can
+        /// leave it out. Not serialized: structured sinks keep every property.
+        /// </summary>
+        [XmlIgnore, JsonIgnore]
+        public bool InMessage { get; set; }
     }
 
     /// <summary>

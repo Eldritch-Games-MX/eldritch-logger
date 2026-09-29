@@ -29,6 +29,14 @@ namespace EldritchGames.EldritchLogger.Sinks
         void Flush();
     }
 
+    /// <summary>
+    /// Marks a sink whose output already shows Unity's own log (the Unity Console, the in-game console).
+    /// The logger does not send it entries captured from Unity's log, which would otherwise appear twice.
+    /// </summary>
+    public interface IShowsUnityLog
+    {
+    }
+
     /// <summary>Optional runtime information shown by editor tooling.</summary>
     public interface ISinkDiagnostics
     {

@@ -39,6 +39,20 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
         }
 
         [Test]
+        public void TokenList_PeekResetAndToString()
+        {
+            var tokens = new Lexer().Tokenize("say hi --loud");
+
+            Assert.That(tokens.Count, Is.EqualTo(3));
+            Assert.That(tokens.Peek().Value, Is.EqualTo("say"));
+            tokens.Next();
+            tokens.Reset();
+            Assert.That(tokens.Next().Value, Is.EqualTo("say"));
+            Assert.That(tokens.ToString(), Is.EqualTo("Command:say Argument:hi Flag:loud"));
+            Assert.That(new Token(TokenType.Argument, null).Value, Is.Empty);
+        }
+
+        [Test]
         public void Parser_FailsOnEmptyInput()
         {
             var result = new CommandParser().Parse(new Lexer().Tokenize(""), "");

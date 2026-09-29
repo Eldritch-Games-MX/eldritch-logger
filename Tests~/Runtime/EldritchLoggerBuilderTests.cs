@@ -77,5 +77,34 @@ namespace EldritchGames.EldritchLogger.Tests
 
             Assert.That(sink.Entries, Has.Count.EqualTo(1));
         }
+
+        [Test]
+        public void Builder_RejectsNulls()
+        {
+            var builder = new EldritchLoggerBuilder();
+            Assert.Throws<ArgumentNullException>(() => builder.WithFilter(null));
+            Assert.Throws<ArgumentNullException>(() => builder.WithMapper(null));
+            Assert.Throws<ArgumentNullException>(() => builder.WithDispatcher(null));
+            Assert.Throws<ArgumentNullException>(() => builder.WithClock(null));
+            Assert.Throws<ArgumentNullException>(() => builder.AddEnricher(null));
+            Assert.Throws<ArgumentNullException>(() => builder.AddSink((ILogSink)null));
+            Assert.Throws<ArgumentNullException>(() => builder.AddSink((LogSinkConfig)null));
+            Assert.Throws<ArgumentNullException>(() => EldritchLoggerBuilder.FromSettings(null));
+        }
+
+        [Test]
+        public void ClearSinks_RemovesSinksAndConfigs()
+        {
+            var settings = ScriptableObject.CreateInstance<LogSettings>();
+            try
+            {
+                using var logger = EldritchLoggerBuilder.FromSettings(settings).AddSink(new RecordingSink()).ClearSinks().Build();
+                Assert.That(logger.Sinks.Count, Is.EqualTo(0));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
     }
 }

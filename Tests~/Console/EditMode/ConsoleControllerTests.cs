@@ -1,12 +1,14 @@
 using EldritchGames.EldritchLogger.Console.Autocompletion;
 using EldritchGames.EldritchLogger.Console.Execution;
+using EldritchGames.EldritchLogger.Console.Registry;
 using EldritchGames.EldritchLogger.Console.UI;
+using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Pipeline;
 using EldritchGames.EldritchLogger.Sinks;
-using EldritchGames.EldritchLogger.Core;
 using Moq;
 using NUnit.Framework;
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -113,6 +115,32 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
 
             Assert.That(view.Lines, Is.Empty);
             executor.Verify(e => e.Execute(It.IsAny<string>()), Times.Never);
+        }
+
+        [Test]
+        public void Controller_AcceptsSuggestions_OnlyWhileVisible()
+        {
+            var view = new FakeView { IsVisible = false };
+            var accept = new UnityEngine.InputSystem.InputAction(type: UnityEngine.InputSystem.InputActionType.Button);
+            var executor = ConsoleTestHelpers.CreateExecutor(new CommandRegistry(), new RecordingOutput());
+            using var controller = new ConsoleController(view, executor, new EldritchGames.EldritchLogger.Console.Autocompletion.AutocompleteProvider(new CommandRegistry()),
+                                                         null, accept, captureUnityLogs: false);
+            try
+            {
+                var handler = typeof(ConsoleController).GetMethod("HandleAcceptSuggestion",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                handler.Invoke(controller, new object[] { default(UnityEngine.InputSystem.InputAction.CallbackContext) });
+                Assert.That(view.Accepted, Is.False);
+
+                view.IsVisible = true;
+                handler.Invoke(controller, new object[] { default(UnityEngine.InputSystem.InputAction.CallbackContext) });
+                Assert.That(view.Accepted, Is.True);
+            }
+            finally
+            {
+                accept.Dispose();
+            }
         }
     }
 }

@@ -21,7 +21,10 @@ namespace EldritchGames.EldritchLogger.Tests
 
         public string Name { get; }
         public LogLevel MinimumLevel { get; }
-        public void Emit(LogEntryDto entry) => Entries.Add(entry);
+        public void Emit(LogEntryDto entry)
+        {
+            lock (Entries) Entries.Add(entry);
+        }
         public void Dispose() => Disposed = true;
     }
 

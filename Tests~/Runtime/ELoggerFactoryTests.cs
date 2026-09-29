@@ -70,5 +70,17 @@ namespace EldritchGames.EldritchLogger.Tests
             var factory = new EldritchLoggerFactory(NullLogger.Instance);
             Assert.Throws<NotSupportedException>(() => factory.AddSink(new RecordingSink()));
         }
+
+        [Test]
+        public void Factory_Dispose_DisposesTheRootLoggerAndItsSinks()
+        {
+            var sink = new RecordingSink();
+            var root = new EldritchLoggerBuilder().AddSink(sink).Build();
+
+            new EldritchLoggerFactory(root).Dispose();
+
+            Assert.That(sink.Disposed, Is.True);
+            Assert.That(root.IsEnabled(LogLevel.Critical, LogCategory.General), Is.False);
+        }
     }
 }

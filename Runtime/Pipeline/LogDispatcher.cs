@@ -25,13 +25,23 @@ namespace EldritchGames.EldritchLogger.Pipeline
         /// <summary>
         /// True while the current thread is delivering an entry to sinks. Lets listeners of
         /// <c>Application.logMessageReceived</c> recognise the echo produced by <see cref="UnityConsoleSink"/>.
+        /// Set by the logger around any <see cref="ILogDispatcher"/>, so custom dispatchers keep the protection.
         /// </summary>
         public static bool IsDispatching => dispatching;
 
+        /// <summary>Marks the current thread as dispatching; pass the result to <see cref="EndDispatch"/>.</summary>
+        internal static bool BeginDispatch()
+        {
+            bool previous = dispatching;
+            dispatching = true;
+            return previous;
+        }
+
+        internal static void EndDispatch(bool previous) => dispatching = previous;
+
         public void Dispatch(LogEntryDto entry, IReadOnlyList<ILogSink> sinks)
         {
-            bool wasDispatching = dispatching;
-            dispatching = true;
+            bool wasDispatching = BeginDispatch();
             try
             {
                 for (int i = 0; i < sinks.Count; i++)
@@ -51,7 +61,7 @@ namespace EldritchGames.EldritchLogger.Pipeline
             }
             finally
             {
-                dispatching = wasDispatching;
+                EndDispatch(wasDispatching);
             }
         }
     }

@@ -29,7 +29,12 @@ namespace EldritchGames.EldritchLogger.Mapper
 
             var metadata = new List<MetadataEntry>(entry.Properties.Count);
             foreach (var kv in entry.Properties)
-                metadata.Add(new MetadataEntry { Key = kv.Key, Value = kv.Value?.ToString() });
+                metadata.Add(new MetadataEntry
+                {
+                    Key = kv.Key,
+                    Value = FormatValue(kv.Value),
+                    InMessage = Contains(entry.RenderedProperties, kv.Key)
+                });
 
             return new LogEntryDto
             {
@@ -41,6 +46,19 @@ namespace EldritchGames.EldritchLogger.Mapper
                 Exception = entry.Exception != null ? DescribeException(entry.Exception) : null,
                 Context = entry.Context
             };
+        }
+
+        /// <summary>
+        /// Property values are written with the invariant culture, so files and remote sinks get
+        /// <c>182.4</c> on every machine (not <c>182,4</c> on a German one) and match the rendered message.
+        /// </summary>
+        private static string FormatValue(object value) => Core.LogValues.Format(value);
+
+        private static bool Contains(IReadOnlyList<string> keys, string key)
+        {
+            for (int i = 0; i < keys.Count; i++)
+                if (keys[i] == key) return true;
+            return false;
         }
 
         private string DescribeException(Exception exception)

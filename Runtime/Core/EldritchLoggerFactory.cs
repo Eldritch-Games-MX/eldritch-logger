@@ -55,6 +55,9 @@ namespace EldritchGames.EldritchLogger.Core
         /// <inheritdoc/>
         public System.Collections.Generic.IReadOnlyList<ILogSink> All => RootRegistry.All;
 
+        /// <summary>Runtime control of the root logger, or null when it does not support it.</summary>
+        public ILogControl Control => (_root as EldritchLogger)?.Control;
+
         private ISinkRegistry RootRegistry =>
             _root as ISinkRegistry
             ?? throw new NotSupportedException($"{_root.GetType().Name} does not support runtime sink registration.");

@@ -17,11 +17,12 @@ namespace EldritchGames.EldritchLogger.Settings
             settings.SetAllCategoriesEnabled(true);
         }
 
+        // Unity stays enabled in every preset: it carries engine errors and uncaught exceptions.
         public static void ApplyNormal(LogSettings settings) =>
-            Apply(settings, LogLevel.Info, LogCategory.Gameplay, LogCategory.UI, LogCategory.Network);
+            Apply(settings, LogLevel.Info, LogCategory.Gameplay, LogCategory.UI, LogCategory.Network, LogCategory.Unity);
 
         public static void ApplyProduction(LogSettings settings) =>
-            Apply(settings, LogLevel.Warning, LogCategory.Gameplay, LogCategory.Network);
+            Apply(settings, LogLevel.Warning, LogCategory.Gameplay, LogCategory.Network, LogCategory.Unity);
 
         private static void Apply(LogSettings settings, LogLevel level, params LogCategory[] enabledBuiltIns)
         {

@@ -29,6 +29,7 @@ namespace EldritchGames.EldritchLogger.Core
         private ILogEntryMapper mapper;
         private ILogDispatcher dispatcher;
         private IClock clock = SystemClock.Instance;
+        private UnityLogCapture unityLogCapture = UnityLogCapture.Off;
 
         /// <summary>
         /// Starts from a settings asset: settings-based filter, default enrichers (scene, build version)
@@ -43,7 +44,8 @@ namespace EldritchGames.EldritchLogger.Core
             {
                 settings = settings,
                 filter = new SettingsLogFilter(settings),
-                mapper = new LogEntryMapper(settings.filterLoggerFrames)
+                mapper = new LogEntryMapper(settings.filterLoggerFrames),
+                unityLogCapture = settings.captureUnityLogs
             };
             builder.AddEnricher(new SceneEnricher());
             builder.AddEnricher(new BuildVersionEnricher());
@@ -71,6 +73,13 @@ namespace EldritchGames.EldritchLogger.Core
         public EldritchLoggerBuilder WithDispatcher(ILogDispatcher dispatcher)
         {
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+            return this;
+        }
+
+        /// <summary>Forwards Unity's own log messages (errors, exceptions...) into the logger.</summary>
+        public EldritchLoggerBuilder CaptureUnityLogs(UnityLogCapture capture)
+        {
+            unityLogCapture = capture;
             return this;
         }
 
@@ -131,13 +140,18 @@ namespace EldritchGames.EldritchLogger.Core
                 }
             }
 
-            return new EldritchLogger(
+            var logger = new EldritchLogger(
                 filter ?? AcceptAllFilter.Instance,
                 enrichers,
                 mapper ?? new LogEntryMapper(),
                 dispatcher ?? new LogDispatcher(),
                 clock,
                 allSinks);
+
+            if (unityLogCapture != UnityLogCapture.Off)
+                logger.Own(new UnityLogForwarder(logger, unityLogCapture));
+
+            return logger;
         }
 
         private sealed class AcceptAllFilter : ILogFilter

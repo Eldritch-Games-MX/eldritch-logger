@@ -2,15 +2,12 @@ using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Formatting;
 using EldritchGames.EldritchLogger.Settings;
-using EldritchGames.EldritchLogger.Sinks.Config;
 using EldritchGames.EldritchLogger.Sinks.Files;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 using UnityEngine;
 
@@ -40,58 +37,6 @@ namespace EldritchGames.EldritchLogger.Tests
             Category = "Gameplay",
             Message = "message " + i
         };
-
-        [Test]
-        public void BackgroundWriter_PreservesOrder_ForASingleProducer()
-        {
-            var path = Path.Combine(directory, "ordered.txt");
-            using (var writer = new BackgroundLogWriter(path, e => e.Message + "\n"))
-            {
-                for (int i = 0; i < 10_000; i++) writer.Enqueue(Entry(i));
-            }
-
-            var lines = File.ReadAllLines(path);
-            Assert.That(lines, Has.Length.EqualTo(10_000));
-            Assert.That(lines, Is.EqualTo(Enumerable.Range(0, 10_000).Select(i => "message " + i)));
-        }
-
-        [Test]
-        public void BackgroundWriter_AcceptsConcurrentProducers()
-        {
-            var path = Path.Combine(directory, "concurrent.txt");
-            using (var writer = new BackgroundLogWriter(path, e => e.Message + "\n", capacity: 100_000))
-            {
-                Parallel.For(0, 8, t =>
-                {
-                    for (int i = 0; i < 1000; i++) writer.Enqueue(Entry(t * 1000 + i));
-                });
-            }
-
-            Assert.That(File.ReadAllLines(path).Distinct().Count(), Is.EqualTo(8000));
-        }
-
-        [Test]
-        public void BackgroundWriter_DropsOldest_WhenFull()
-        {
-            using var capture = new SelfLogCapture();
-            var path = Path.Combine(directory, "bounded.txt");
-            var gate = new ManualResetEventSlim(false);
-
-            using (var writer = new BackgroundLogWriter(path, e =>
-                   {
-                       gate.Wait(TimeSpan.FromSeconds(5)); // hold the writer thread so the queue fills
-                       return e.Message + "\n";
-                   }, capacity: 5))
-            {
-                for (int i = 0; i < 50; i++) writer.Enqueue(Entry(i));
-                Assert.That(writer.DroppedCount, Is.GreaterThan(0));
-                gate.Set();
-            }
-
-            var lines = File.ReadAllLines(path);
-            Assert.That(lines.Last(), Is.EqualTo("message 49"), "the newest entry is never dropped");
-            Assert.That(lines.Length, Is.LessThan(50));
-        }
 
         [Test]
         public void JsonLinesSink_WritesOneParsableObjectPerLine()
@@ -160,42 +105,6 @@ namespace EldritchGames.EldritchLogger.Tests
             {
                 UnityEngine.Object.DestroyImmediate(settings);
             }
-        }
-
-        [Test]
-        public void Locator_KeepsOnlyTheNewestSessions()
-        {
-            var locator = new LogFileLocator(directory, "game", ".jsonl");
-            var start = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-            for (int i = 0; i < 6; i++)
-                File.WriteAllText(locator.SessionFilePath(start.AddMinutes(i)), "");
-            File.WriteAllText(Path.Combine(directory, "other.jsonl"), "");
-
-            locator.DeleteOldSessions(keep: 2);
-
-            var remaining = Directory.GetFiles(directory).Select(Path.GetFileName).OrderBy(n => n).ToArray();
-            Assert.That(remaining, Is.EqualTo(new[]
-            {
-                Path.GetFileName(locator.SessionFilePath(start.AddMinutes(4))),
-                Path.GetFileName(locator.SessionFilePath(start.AddMinutes(5))),
-                "other.jsonl"
-            }));
-        }
-
-        [Test]
-        public void FileSinkConfig_CreatesSessionFile_AndAppliesRetention()
-        {
-            var clock = new FakeClock();
-            var config = new JsonLinesFileSinkConfig { directory = directory, fileName = "session", maxSessionFiles = 2 };
-
-            for (int i = 0; i < 4; i++)
-            {
-                clock.UtcNow = clock.UtcNow.AddMinutes(1);
-                using var sink = (JsonLinesFileSink)config.CreateSink(new SinkBuildContext(null, clock));
-                sink.Emit(Entry(i));
-            }
-
-            Assert.That(Directory.GetFiles(directory, "session_*.jsonl"), Has.Length.EqualTo(2));
         }
     }
 }

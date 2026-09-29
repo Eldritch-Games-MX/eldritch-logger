@@ -1,11 +1,11 @@
 using EldritchGames.EldritchLogger.Console.Commands;
 using EldritchGames.EldritchLogger.Console.Commands.BuiltIn;
 using EldritchGames.EldritchLogger.Console.Execution;
-using EldritchGames.EldritchLogger.Console.Output;
 using EldritchGames.EldritchLogger.Console.Registry;
 using EldritchGames.EldritchLogger.Console.Themes;
 using Moq;
 using NUnit.Framework;
+using System;
 using System.Linq;
 using UnityEngine;
 
@@ -40,13 +40,13 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
         }
 
         [TearDown]
-        public void TearDown() => Object.DestroyImmediate(dark);
+        public void TearDown() => UnityEngine.Object.DestroyImmediate(dark);
 
         [Test]
         public void CoreGroup_RegistersAllBuiltIns()
         {
             Assert.That(registry.All.Select(c => c.Descriptor.Name),
-                Is.EquivalentTo(new[] { "help", "clear", "history", "repeat", "theme" }));
+                Is.EquivalentTo(new[] { "help", "clear", "history", "repeat", "cvars", "theme" }));
         }
 
         [Test]
@@ -150,6 +150,19 @@ namespace EldritchGames.EldritchLogger.Console.Tests.EditMode
 
             Assert.That(output.Messages.Single().message, Does.Contain("'neon' is not a valid theme"));
             applier.Verify(a => a.ApplyTheme(It.IsAny<ConsoleTheme>()), Times.Never);
+        }
+
+        [Test]
+        public void History_WhenEmpty_SaysSo()
+        {
+            var registry = new CommandRegistry();
+            var output = new RecordingOutput();
+            var executor = ConsoleTestHelpers.CreateExecutor(registry, output);
+            registry.Register(new HistoryCommand(new CommandHistory(5)));
+
+            executor.Execute("history");
+
+            Assert.That(output.Texts, Is.EqualTo(new[] { "History is empty." }));
         }
     }
 }

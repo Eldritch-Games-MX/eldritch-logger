@@ -23,7 +23,16 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
 
             bool development = (report.summary.options & BuildOptions.Development) != 0;
             bool disabledByDefine = ConsoleDefines.IsDisabledFor(report.summary.platformGroup);
+            StripUnavailableConsoles(scene, development, disabledByDefine);
+        }
 
+        /// <summary>
+        /// Removes every console whose availability excludes this build. Returns how many were removed.
+        /// Separate from <see cref="OnProcessScene"/> so it can be tested without a build report.
+        /// </summary>
+        internal static int StripUnavailableConsoles(Scene scene, bool development, bool disabledByDefine)
+        {
+            int removed = 0;
             foreach (var root in scene.GetRootGameObjects())
             {
                 foreach (var bootstrap in root.GetComponentsInChildren<ConsoleBootstrap>(true))
@@ -42,8 +51,10 @@ namespace EldritchGames.EldritchLogger.Console.EditorTools
                     }
 
                     Object.DestroyImmediate(bootstrap.ConsoleRoot);
+                    removed++;
                 }
             }
+            return removed;
         }
     }
 

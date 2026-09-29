@@ -6,7 +6,7 @@ using System;
 
 namespace EldritchGames.EldritchLogger.Console.Commands.BuiltIn
 {
-    /// <summary>The built-in commands: help, clear, history, repeat, theme.</summary>
+    /// <summary>The built-in commands: help, clear, history, repeat, cvars, theme.</summary>
     public sealed class CoreCommandGroup : ICommandGroup
     {
         private readonly CommandHistory history;
@@ -36,6 +36,7 @@ namespace EldritchGames.EldritchLogger.Console.Commands.BuiltIn
             registry.Register(new ClearCommand());
             registry.Register(new HistoryCommand(history, settings != null ? settings.defaultHistoryLimit : 20));
             registry.Register(new RepeatCommand(executor, settings != null ? settings.maxRepeatCount : 1000));
+            registry.Register(new CvarsCommand(registry));
 
             if (themeApplier != null && themeLoader != null)
                 registry.Register(new ThemeCommand(themeApplier, themeLoader));

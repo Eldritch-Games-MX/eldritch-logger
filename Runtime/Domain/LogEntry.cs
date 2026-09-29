@@ -11,6 +11,7 @@ namespace EldritchGames.EldritchLogger.Domain
     {
         private static readonly IReadOnlyDictionary<string, object> NoProperties =
             new Dictionary<string, object>();
+        private static readonly IReadOnlyList<string> NoKeys = Array.Empty<string>();
 
         /// <summary>
         /// When the entry was logged. <c>default</c> until the logger stamps it.
@@ -21,6 +22,12 @@ namespace EldritchGames.EldritchLogger.Domain
         public string Message { get; }
         public IReadOnlyDictionary<string, object> Properties { get; }
         public Exception Exception { get; }
+
+        /// <summary>
+        /// Keys of <see cref="Properties"/> whose values are already rendered into <see cref="Message"/>
+        /// (the filled holes of a message template). Text output leaves these out to avoid repeating them.
+        /// </summary>
+        public IReadOnlyList<string> RenderedProperties { get; }
 
         /// <summary>
         /// Optional Unity object the entry relates to (used for click-to-select in the Unity Console).
@@ -34,7 +41,8 @@ namespace EldritchGames.EldritchLogger.Domain
                         IReadOnlyDictionary<string, object> properties = null,
                         Exception exception = null,
                         UnityEngine.Object context = null,
-                        DateTime timestampUtc = default)
+                        DateTime timestampUtc = default,
+                        IReadOnlyList<string> renderedProperties = null)
         {
             Level = level;
             Category = category;
@@ -43,13 +51,14 @@ namespace EldritchGames.EldritchLogger.Domain
             Exception = exception;
             Context = context;
             TimestampUtc = timestampUtc;
+            RenderedProperties = renderedProperties ?? NoKeys;
         }
 
         public LogEntry WithTimestamp(DateTime timestampUtc) =>
-            new(Level, Category, Message, Properties, Exception, Context, timestampUtc);
+            new(Level, Category, Message, Properties, Exception, Context, timestampUtc, RenderedProperties);
 
         public LogEntry WithProperties(IReadOnlyDictionary<string, object> properties) =>
-            new(Level, Category, Message, properties, Exception, Context, TimestampUtc);
+            new(Level, Category, Message, properties, Exception, Context, TimestampUtc, RenderedProperties);
 
         /// <summary>Returns a copy with <paramref name="key"/> set to <paramref name="value"/>.</summary>
         public LogEntry WithProperty(string key, object value)

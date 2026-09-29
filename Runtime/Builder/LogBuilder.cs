@@ -19,6 +19,7 @@ namespace EldritchGames.EldritchLogger.Builder
         private Dictionary<string, object> properties;
         private Exception exception;
         private UnityEngine.Object context;
+        private IReadOnlyList<string> renderedProperties;
 
         public LogBuilder(IEldritchLogger logger, LogLevel level, LogCategory category = default)
         {
@@ -73,7 +74,45 @@ namespace EldritchGames.EldritchLogger.Builder
 
         public void Log(string message)
         {
-            logger.Log(new LogEntry(level, category, message, properties, exception, context));
+            logger.Log(new LogEntry(level, category, message, properties, exception, context,
+                                    renderedProperties: renderedProperties));
+        }
+
+        public void Log(string template, params object[] args)
+        {
+            var parsed = MessageTemplate.Parse(template);
+
+            // logger.Error("Save failed", ex): a trailing exception with no hole left for it is the entry's exception,
+            // not a stray argument (a common habit from other logging libraries).
+            if (exception == null && args != null && args.Length > parsed.PropertyNames.Count && args[args.Length - 1] is Exception trailing)
+            {
+                exception = trailing;
+                Array.Resize(ref args, args.Length - 1);
+            }
+
+            // No holes: a plain message ("Game started"). Render only unescapes {{ }}; no properties, no allocation.
+            if (parsed.PropertyNames.Count == 0)
+            {
+                Log(parsed.Render(args, null));
+                return;
+            }
+
+            properties ??= new Dictionary<string, object>();
+            var message = parsed.Render(args, properties);
+            properties[LogPropertyKeys.MessageTemplate] = template;
+
+            // Holes are filled in order: the first min(args, holes) are in the message; the rest stay as written.
+            var holes = parsed.PropertyNames;
+            int filled = Math.Min(args?.Length ?? 0, holes.Count);
+            renderedProperties = filled == holes.Count ? holes : Take(holes, filled);
+            Log(message);
+        }
+
+        private static string[] Take(IReadOnlyList<string> names, int count)
+        {
+            var result = new string[count];
+            for (int i = 0; i < count; i++) result[i] = names[i];
+            return result;
         }
     }
 
@@ -90,5 +129,6 @@ namespace EldritchGames.EldritchLogger.Builder
         public ILogBuilder WithComponent(Component component) => this;
         public ILogBuilder WithContext(UnityEngine.Object context) => this;
         public void Log(string message) { }
+        public void Log(string template, params object[] args) { }
     }
 }

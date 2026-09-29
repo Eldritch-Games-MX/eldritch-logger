@@ -49,5 +49,60 @@ namespace EldritchGames.EldritchLogger.Core
 
         public static ILogBuilder AtCritical(this IEldritchLogger logger, LogCategory category = default) =>
             logger.At(LogLevel.Critical, category);
+
+        // ---- Message templates (General category; use At*(category).Log(template, args) for others) ----
+
+        /// <summary>Logs a message template: <c>logger.Debug("Spawned {Enemy} at {Position}", enemy, pos)</c>.</summary>
+        public static void Debug(this IEldritchLogger logger, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Debug, default, null, template, args);
+
+        public static void Info(this IEldritchLogger logger, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Info, default, null, template, args);
+
+        public static void Warning(this IEldritchLogger logger, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Warning, default, null, template, args);
+
+        public static void Error(this IEldritchLogger logger, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Error, default, null, template, args);
+
+        public static void Error(this IEldritchLogger logger, Exception exception, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Error, default, exception, template, args);
+
+        public static void Critical(this IEldritchLogger logger, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Critical, default, null, template, args);
+
+        public static void Critical(this IEldritchLogger logger, Exception exception, string template, params object[] args) =>
+            LogTemplate(logger, LogLevel.Critical, default, exception, template, args);
+
+        /// <summary>
+        /// Renders <paramref name="template"/> with <paramref name="args"/>, adding one property per hole plus
+        /// <see cref="LogPropertyKeys.MessageTemplate"/>. Nothing is rendered when the level/category is disabled.
+        /// </summary>
+        public static void LogTemplate(this IEldritchLogger logger, LogLevel level, LogCategory category,
+                                       Exception exception, string template, params object[] args)
+        {
+            // At() returns a no-op builder when disabled; the builder owns template rendering.
+            logger.At(level, category).WithException(exception).Log(template, args);
+        }
+
+        // ---- Scopes ----
+
+        /// <summary>
+        /// Adds <paramref name="key"/> = <paramref name="value"/> to every entry logged (by any logger)
+        /// until the returned scope is disposed. See <see cref="Pipeline.LogScope"/>.
+        /// Never keep a scope open across a coroutine <c>yield</c> (analyzer rule ELG005).
+        /// </summary>
+        public static IDisposable BeginScope(this IEldritchLogger logger, string key, object value) =>
+            Pipeline.LogScope.Push(key, value);
+
+        /// <summary>Opens a scope with several properties: <c>logger.BeginScope(("MatchId", id), ("Map", map))</c>.</summary>
+        public static IDisposable BeginScope(this IEldritchLogger logger, params (string Key, object Value)[] properties)
+        {
+            if (properties == null) throw new ArgumentNullException(nameof(properties));
+            var pairs = new KeyValuePair<string, object>[properties.Length];
+            for (int i = 0; i < properties.Length; i++)
+                pairs[i] = new KeyValuePair<string, object>(properties[i].Key, properties[i].Value);
+            return Pipeline.LogScope.PushOwned(pairs);
+        }
     }
 }

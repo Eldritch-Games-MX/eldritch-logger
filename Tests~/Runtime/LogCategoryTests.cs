@@ -46,9 +46,10 @@ namespace EldritchGames.EldritchLogger.Tests
         }
 
         [Test]
-        public void BuiltIn_ContainsNineCategories()
+        public void BuiltIn_ContainsTenCategories()
         {
-            Assert.That(LogCategory.BuiltIn.Count, Is.EqualTo(9));
+            Assert.That(LogCategory.BuiltIn.Count, Is.EqualTo(10));
+            Assert.That(LogCategory.BuiltIn, Does.Contain(LogCategory.Unity));
             Assert.That(LogCategory.BuiltIn, Does.Contain(LogCategory.Input));
         }
     }

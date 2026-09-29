@@ -25,10 +25,13 @@ namespace EldritchGames.EldritchLogger.Core
         public static readonly LogCategory Animation = new("Animation");
         public static readonly LogCategory Input = new("Input");
 
+        /// <summary>Messages forwarded from Unity's own log (Debug.Log, errors, exceptions).</summary>
+        public static readonly LogCategory Unity = new("Unity");
+
         /// <summary>The categories that ship with the logger.</summary>
         public static IReadOnlyList<LogCategory> BuiltIn { get; } = new[]
         {
-            General, Gameplay, UI, Audio, Network, AI, Physics, Animation, Input
+            General, Gameplay, UI, Audio, Network, AI, Physics, Animation, Input, Unity
         };
 
         private readonly string name;

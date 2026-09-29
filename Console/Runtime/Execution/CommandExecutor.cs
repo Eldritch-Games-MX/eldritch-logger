@@ -103,7 +103,7 @@ namespace EldritchGames.EldritchLogger.Console.Execution
                 return ExecutionStatus.Failed;
             }
 
-            var context = new CommandContext(bound.Arguments, output, command.RawText);
+            var context = new CommandContext(bound.Arguments, output, command.RawText, CheatPolicy.CheatsAllowed);
             try
             {
                 switch (target)

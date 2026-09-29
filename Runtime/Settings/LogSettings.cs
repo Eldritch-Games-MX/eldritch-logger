@@ -31,24 +31,50 @@ namespace EldritchGames.EldritchLogger.Settings
         [SerializeReference]
         public List<LogSinkConfig> sinks = new() { new UnityConsoleSinkConfig() };
 
+        [Header("Unity Log Capture")]
+        [Tooltip("Forward Unity's own messages (Debug.Log, engine errors, uncaught exceptions) into the logger under the 'Unity' category, so they reach file and remote sinks.")]
+        public Pipeline.UnityLogCapture captureUnityLogs = Pipeline.UnityLogCapture.ErrorsAndExceptions;
+
         [Header("Bootstrap")]
         [Tooltip("Create the logger automatically before the first scene loads.")]
         public bool autoInitialize = true;
 
         [NonSerialized] private Dictionary<string, CategorySetting> lookup;
 
+        /// <summary>Default colors of <see cref="LogCategory.BuiltIn"/>, in the same order.</summary>
+        private static readonly Color[] BuiltInColors =
+        {
+            Color.white, Color.green, Color.blue, Color.yellow, Color.magenta, Color.cyan,
+            new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 0.5f), new Color(0f, 0.5f, 0f), Color.gray
+        };
+
         public static List<CategorySetting> CreateDefaultCategories()
         {
-            var defaults = new[]
-            {
-                Color.white, Color.green, Color.blue, Color.yellow, Color.magenta, Color.cyan,
-                new Color(1f, 0.5f, 0f), new Color(0.5f, 0f, 0.5f), new Color(0f, 0.5f, 0f)
-            };
-
             var list = new List<CategorySetting>();
             for (int i = 0; i < LogCategory.BuiltIn.Count; i++)
-                list.Add(new CategorySetting(LogCategory.BuiltIn[i].Name, defaults[i]));
+                list.Add(new CategorySetting(LogCategory.BuiltIn[i].Name, BuiltInColors[i]));
             return list;
+        }
+
+        /// <summary>
+        /// Adds any built-in category missing from <see cref="categories"/> (enabled, default color), e.g. one
+        /// introduced by a newer package version. Built-ins cannot be removed, so the list stays complete.
+        /// </summary>
+        /// <returns>True if categories were added.</returns>
+        public bool EnsureBuiltInCategories()
+        {
+            categories ??= new List<CategorySetting>();
+            bool added = false;
+            for (int i = 0; i < LogCategory.BuiltIn.Count; i++)
+            {
+                var name = LogCategory.BuiltIn[i].Name;
+                if (categories.Exists(c => c != null && string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                categories.Add(new CategorySetting(name, BuiltInColors[i]));
+                added = true;
+            }
+            if (added) InvalidateCache();
+            return added;
         }
 
         public CategorySetting FindCategory(LogCategory category)
@@ -104,6 +130,10 @@ namespace EldritchGames.EldritchLogger.Settings
 
         public void OnBeforeSerialize() { }
 
-        public void OnAfterDeserialize() => InvalidateCache();
+        public void OnAfterDeserialize()
+        {
+            InvalidateCache();
+            EnsureBuiltInCategories();
+        }
     }
 }

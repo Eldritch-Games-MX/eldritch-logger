@@ -9,11 +9,6 @@ namespace EldritchGames.EldritchLogger.EditorTools.LogViewer
     /// <summary>Reads files written by the JSON Lines sink.</summary>
     public static class JsonLinesLogReader
     {
-        private static readonly JsonSerializerSettings Settings = new()
-        {
-            DateTimeZoneHandling = DateTimeZoneHandling.Utc
-        };
-
         /// <param name="invalidLines">Lines that could not be parsed (e.g. a line cut off by a crash).</param>
         public static List<LogEntryDto> Read(string path, out int invalidLines)
         {
@@ -30,7 +25,7 @@ namespace EldritchGames.EldritchLogger.EditorTools.LogViewer
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 try
                 {
-                    var entry = JsonConvert.DeserializeObject<LogEntryDto>(line, Settings);
+                    var entry = LogJson.Deserialize(line);
                     if (entry != null) entries.Add(entry);
                     else invalidLines++;
                 }

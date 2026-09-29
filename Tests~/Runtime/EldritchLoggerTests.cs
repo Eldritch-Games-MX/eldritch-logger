@@ -1,13 +1,18 @@
 using EldritchGames.EldritchLogger.Builder;
 using EldritchGames.EldritchLogger.Core;
 using EldritchGames.EldritchLogger.Domain;
+using EldritchGames.EldritchLogger.Dto;
 using EldritchGames.EldritchLogger.Mapper;
 using EldritchGames.EldritchLogger.Pipeline;
 using EldritchGames.EldritchLogger.Sinks;
+using EldritchGames.EldritchLogger.Sinks.Files;
+using EldritchGames.EldritchLogger.Sinks.Network;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using UnityEngine;
 
 namespace EldritchGames.EldritchLogger.Tests
 {
@@ -172,6 +177,92 @@ namespace EldritchGames.EldritchLogger.Tests
             Assert.That(logger.AtDebug(), Is.Not.InstanceOf<LogBuilder>());
             Assert.That(allocated, Is.EqualTo(0));
             Assert.That(sink.Entries, Is.Empty);
+        }
+
+        private sealed class ThrowingFlushSink : Sinks.ILogSink, Sinks.IFlushableSink
+        {
+            public string Name => "ThrowingFlush";
+            public LogLevel MinimumLevel => LogLevel.Debug;
+            public void Emit(LogEntryDto entry) { }
+            public void Flush() => throw new IOException("disk gone");
+        }
+
+        // 1 ----------------------------------------------------------------------------------------------
+
+        [Test]
+        public void LoggerFlush_NeverThrows_EvenIfASinkFlushThrows()
+        {
+            using var capture = new SelfLogCapture();
+            using var logger = new EldritchLoggerBuilder().AddSink(new ThrowingFlushSink()).Build();
+
+            Assert.DoesNotThrow(logger.Flush);
+            Assert.That(capture.Messages, Has.Some.Contains("failed to flush"));
+        }
+
+        private sealed class CapturingMapper : ILogEntryMapper
+        {
+            private readonly LogEntryMapper inner = new();
+            public LogEntry Last;
+
+            public LogEntryDto ToDto(LogEntry entry)
+            {
+                Last = entry;
+                return inner.ToDto(entry);
+            }
+        }
+
+        [Test]
+        public void WithoutScopesOrEnrichers_TheEntryIsNotCopied()
+        {
+            var mapper = new CapturingMapper();
+            using var logger = new EldritchLoggerBuilder().WithMapper(mapper).AddSink(new RecordingSink()).Build();
+            var entry = new LogEntry(LogLevel.Info, LogCategory.General, "m", timestampUtc: DateTime.UtcNow);
+
+            logger.Log(entry);
+            Assert.That(mapper.Last, Is.SameAs(entry));
+
+            using (logger.BeginScope("A", 1))
+                logger.Log(entry);
+            Assert.That(mapper.Last, Is.Not.SameAs(entry));
+            Assert.That(mapper.Last.Properties["A"], Is.EqualTo(1));
+        }
+
+        private sealed class UnityViewSink : ILogSink, IShowsUnityLog
+        {
+            public readonly List<LogEntryDto> Entries = new();
+            public string Name => "Unity view";
+            public LogLevel MinimumLevel => LogLevel.Debug;
+            public void Emit(LogEntryDto entry) => Entries.Add(entry);
+        }
+
+        /// <summary>A custom dispatcher that knows nothing about Unity entries or echo suppression.</summary>
+        private sealed class PassThroughDispatcher : ILogDispatcher
+        {
+            public bool SawDispatching;
+
+            public void Dispatch(LogEntryDto entry, IReadOnlyList<ILogSink> sinks)
+            {
+                SawDispatching = LogDispatcher.IsDispatching;
+                foreach (var sink in sinks) sink.Emit(entry);
+            }
+        }
+
+        [Test]
+        public void CapturedUnityEntries_SkipSinksThatShowUnityLog_WithAnyDispatcher()
+        {
+            var view = new UnityViewSink();
+            var plain = new RecordingSink();
+            var dispatcher = new PassThroughDispatcher();
+            using var logger = new EldritchLoggerBuilder().ClearEnrichers().AddSink(view).AddSink(plain).WithDispatcher(dispatcher).Build();
+
+            logger.Log(new LogEntry(LogLevel.Error, LogCategory.General, "from unity",
+                new Dictionary<string, object> { [LogPropertyKeys.Source] = LogPropertyKeys.UnitySource }));
+            logger.Log(new LogEntry(LogLevel.Error, LogCategory.General, "ours"));
+
+            Assert.That(view.Entries.Select(e => e.Message), Is.EqualTo(new[] { "ours" }));
+            Assert.That(plain.Entries.Select(e => e.Message), Is.EqualTo(new[] { "from unity", "ours" }));
+            Assert.That(dispatcher.SawDispatching, Is.True, "echo suppression covers custom dispatchers");
+            Assert.That(LogDispatcher.IsDispatching, Is.False);
         }
     }
 }
